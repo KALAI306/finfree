@@ -1,0 +1,77 @@
+import React from "react";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { AppProvider, useApp } from "./context/AppContext";
+import { Layout } from "./components/Layout";
+import { Auth } from "./pages/Auth";
+import { Dashboard } from "./pages/Dashboard";
+import { Transactions } from "./pages/Transactions";
+import { Investments } from "./pages/Investments";
+import { EmiManager } from "./pages/EmiManager";
+import { FreedomCalculator } from "./pages/FreedomCalculator";
+import { Goals } from "./pages/Goals";
+import { RulesDashboard } from "./pages/RulesDashboard";
+import { Reports } from "./pages/Reports";
+import { Settings } from "./pages/Settings";
+import { Accounts } from "./pages/Accounts";
+import { AdminPanel } from "./pages/AdminPanel";
+import { ToastContainer } from "./components/Toast";
+import { Flame } from "lucide-react";
+
+const AppContent: React.FC = () => {
+  const { user, loading } = useApp();
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-[#02050e] flex flex-col items-center justify-center text-white">
+        <div className="relative flex items-center justify-center">
+          <div className="w-16 h-16 rounded-full border-4 border-violet-500/20 border-t-violet-600 animate-spin" />
+          <Flame className="w-6 h-6 text-violet-400 absolute animate-pulse" />
+        </div>
+        <p className="text-xs font-bold uppercase tracking-widest text-violet-400/70 mt-6">
+          FinFree is Loading...
+        </p>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return (
+      <>
+        <Auth />
+        <ToastContainer />
+      </>
+    );
+  }
+
+  return (
+    <BrowserRouter>
+      <Layout>
+        <Routes>
+          <Route path="/" element={<Dashboard />} />
+          <Route path="/accounts" element={<Accounts />} />
+          <Route path="/transactions" element={<Transactions />} />
+          <Route path="/investments" element={<Investments />} />
+          <Route path="/emi" element={<EmiManager />} />
+          <Route path="/freedom" element={<FreedomCalculator />} />
+          <Route path="/goals" element={<Goals />} />
+          <Route path="/rules" element={<RulesDashboard />} />
+          <Route path="/reports" element={<Reports />} />
+          <Route path="/settings" element={<Settings />} />
+          <Route path="/admin" element={<AdminPanel />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </Layout>
+      <ToastContainer />
+    </BrowserRouter>
+  );
+};
+
+function App() {
+  return (
+    <AppProvider>
+      <AppContent />
+    </AppProvider>
+  );
+}
+
+export default App;
