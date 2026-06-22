@@ -164,7 +164,7 @@ export const FloatingAiAssistant: React.FC = () => {
   };
 
   return (
-    <div className="fixed bottom-6 right-6 z-50">
+    <div className="fixed bottom-24 md:bottom-6 right-6 z-50">
       {/* FAB */}
       <button
         className="ai-fab relative w-14 h-14 rounded-full flex items-center justify-center transition-all duration-300 cursor-pointer"
