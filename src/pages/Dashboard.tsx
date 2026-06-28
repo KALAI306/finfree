@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { useApp } from "../context/AppContext";
-import { formatIndianCurrency, formatIndianNumberOnly } from "../lib/utils";
+import { formatIndianNumberOnly } from "../lib/utils";
 import { getDailyQuote } from "../lib/quotes";
 import {
   Plus,
@@ -95,7 +95,7 @@ function getTxIcon(category: string, type: string): string {
 }
 
 export const Dashboard: React.FC = () => {
-  const { user, profile, accounts, transactions, investments, emis, themeColor, starredAccountIds, refreshData, storageMode, lastRefreshed, budgetLimits } = useApp();
+  const { user, profile, accounts, transactions, investments, emis, themeColor, starredAccountIds, refreshData, storageMode, lastRefreshed, budgetLimits, fmt: formatIndianCurrency } = useApp();
   const [isAddTxOpen, setIsAddTxOpen] = useState(false);
   const [nwHistory, setNwHistory] = useState<NetWorthSnapshot[]>([]);
 

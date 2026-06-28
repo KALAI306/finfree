@@ -1,6 +1,5 @@
 import React, { useState } from "react";
 import { useApp } from "../context/AppContext";
-import { formatIndianCurrency } from "../lib/utils";
 import { addTransaction, deleteTransaction, updateTransaction } from "../lib/db";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -72,7 +71,7 @@ export const TransactionForm: React.FC<{
   onClose: () => void;
   transaction?: Transaction;
 }> = ({ onClose, transaction }) => {
-  const { accounts, user, showToast, refreshData, customCategories, addCustomCategory } = useApp();
+  const { accounts, user, showToast, refreshData, customCategories, addCustomCategory, fmt: formatIndianCurrency } = useApp();
   const [selectedType, setSelectedType] = useState<"income" | "expense" | "transfer">(
     transaction?.type || "expense"
   );
@@ -398,7 +397,7 @@ function stripCategoryEmoji(cat: string): string {
 
 // Main Transactions Page Component
 export const Transactions: React.FC = () => {
-  const { transactions, accounts, showToast, refreshData } = useApp();
+  const { transactions, accounts, showToast, refreshData, fmt: formatIndianCurrency } = useApp();
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [isImportOpen, setIsImportOpen] = useState(false);
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);

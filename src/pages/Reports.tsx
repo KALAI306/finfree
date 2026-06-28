@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { useApp } from "../context/AppContext";
-import { formatIndianCurrency, formatIndianNumberOnly } from "../lib/utils";
+import { formatIndianNumberOnly } from "../lib/utils";
 import {
   BarChart,
   Bar,
@@ -121,7 +121,7 @@ const CategoryTooltip = ({ active, payload, label }: any) => {
 };
 
 export const Reports: React.FC = () => {
-  const { transactions, accounts, investments, profile, themeColor } = useApp();
+  const { transactions, accounts, investments, profile, themeColor, fmt: formatIndianCurrency } = useApp();
   const accentColor = CHART_COLORS[themeColor] || CHART_COLORS.gold;
 
   const [selectedMonthStr, setSelectedMonthStr] = useState<string>(() => {

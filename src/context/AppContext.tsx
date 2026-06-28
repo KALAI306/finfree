@@ -1,4 +1,5 @@
-import React, { createContext, useContext, useState, useEffect } from "react";
+import React, { createContext, useContext, useState, useEffect, useCallback } from "react";
+import { formatCurrency } from "../lib/utils";
 import {
   supabase,
   getProfile,
@@ -70,6 +71,9 @@ interface AppContextType {
   updateProfileImage: (url: string) => void;
   goalBgImages: Record<string, string>;
   updateGoalBgImage: (goalId: string, url: string) => void;
+  currency: string;
+  setCurrency: (code: string) => void;
+  fmt: (amount: number, includeDecimals?: boolean) => string;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -96,6 +100,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [themeColor, setThemeColorState] = useState<"gold" | "green" | "blue" | "purple" | "rose">(() => {
     return (localStorage.getItem("finfree_theme_color") as any) || "gold";
   });
+
+  // Currency
+  const [currency, setCurrencyState] = useState<string>(() => {
+    try { return localStorage.getItem('finfree_currency') || 'INR'; } catch { return 'INR'; }
+  });
+
+  const setCurrency = useCallback((code: string) => {
+    setCurrencyState(code);
+    try { localStorage.setItem('finfree_currency', code); } catch {}
+  }, []);
+
+  const fmt = useCallback((amount: number, includeDecimals = true) =>
+    formatCurrency(amount, currency, includeDecimals), [currency]);
 
   // Profile and Goal image states — keyed per user to avoid cross-user bleed
   const [profileImage, setProfileImage] = useState<string>("");
@@ -537,6 +554,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         budgetLimits,
         setBudgetLimit,
         removeBudgetLimit,
+        currency,
+        setCurrency,
+        fmt,
       }}
     >
       {children}

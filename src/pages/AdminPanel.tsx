@@ -7,7 +7,6 @@ import {
   adminDeleteUserProfile,
   type Profile,
 } from "../lib/db";
-import { formatIndianCurrency } from "../lib/utils";
 import {
   Shield,
   Users,
@@ -39,7 +38,7 @@ interface UserRow {
 }
 
 export const AdminPanel: React.FC = () => {
-  const { isAdmin, showToast } = useApp();
+  const { isAdmin, showToast, fmt: formatIndianCurrency } = useApp();
   const [rows, setRows] = useState<UserRow[]>([]);
   const [fetching, setFetching] = useState(true);
   const [confirmAction, setConfirmAction] = useState<{ type: "reset" | "delete"; userId: string; name: string } | null>(null);

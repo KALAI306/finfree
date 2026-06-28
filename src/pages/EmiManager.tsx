@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from "react";
 import { useApp } from "../context/AppContext";
-import { formatIndianCurrency } from "../lib/utils";
 import { addEmi, updateEmi, deleteEmi, addTransaction } from "../lib/db";
 import { addMonths, format } from "date-fns";
 import { 
@@ -37,7 +36,7 @@ const emiSchema = z.object({
 type EmiFormValues = z.infer<typeof emiSchema>;
 
 export const EmiManager: React.FC = () => {
-  const { emis, profile, accounts, showToast, refreshData } = useApp();
+  const { emis, profile, accounts, showToast, refreshData, fmt: formatIndianCurrency } = useApp();
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [editingEmi, setEditingEmi] = useState<EMI | null>(null);
 

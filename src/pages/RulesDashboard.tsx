@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useApp } from "../context/AppContext";
-import { formatIndianCurrency, formatIndianNumberOnly } from "../lib/utils";
+import { formatIndianNumberOnly } from "../lib/utils";
 import { Link } from "react-router-dom";
 import {
   ShieldCheck,
@@ -44,7 +44,7 @@ const DEFAULT_THRESHOLDS: RuleThresholds = {
 };
 
 export const RulesDashboard: React.FC = () => {
-  const { profile, emis, investments, goals, transactions, user } = useApp();
+  const { profile, emis, investments, goals, transactions, user, fmt: formatIndianCurrency } = useApp();
   const [expandedRule, setExpandedRule] = useState<string | null>(null);
 
   // Persisted thresholds per user

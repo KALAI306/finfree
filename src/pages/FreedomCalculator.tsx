@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useApp } from "../context/AppContext";
-import { formatIndianCurrency, formatIndianNumberOnly } from "../lib/utils";
+import { formatIndianNumberOnly } from "../lib/utils";
 import { 
   Flame, 
   HelpCircle, 
@@ -24,7 +24,7 @@ import {
 } from "recharts";
 
 export const FreedomCalculator: React.FC = () => {
-  const { profile, accounts, investments } = useApp();
+  const { profile, accounts, investments, fmt: formatIndianCurrency } = useApp();
 
   // Baseline statistics
   const currentAge = profile ? Number(profile.age) : 23;

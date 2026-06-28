@@ -1,6 +1,5 @@
 import React, { useState, useRef } from "react";
 import { useApp } from "../context/AppContext";
-import { formatIndianCurrency } from "../lib/utils";
 import { addTransaction } from "../lib/db";
 import { parseStatementWithAI } from "../lib/openai";
 import { FileText, Upload, Check, Clipboard, Sparkles, RefreshCw, Bot, AlertCircle, Zap } from "lucide-react";
@@ -134,7 +133,7 @@ function openAiErrorMsg(e: any): string {
 // ── Component ────────────────────────────────────────────────────────────────
 
 export const PdfParser: React.FC<{ onClose: () => void }> = ({ onClose }) => {
-  const { user, accounts, showToast, refreshData } = useApp();
+  const { user, accounts, showToast, refreshData, fmt: formatIndianCurrency } = useApp();
 
   const [mode, setMode] = useState<"pdf" | "paste">("pdf");
   const [pasteText, setPasteText] = useState("");

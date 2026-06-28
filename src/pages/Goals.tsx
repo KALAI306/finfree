@@ -1,6 +1,6 @@
 import React, { useState, useRef } from "react";
 import { useApp } from "../context/AppContext";
-import { formatIndianCurrency, compressImage } from "../lib/utils";
+import { compressImage } from "../lib/utils";
 import { addGoal, updateGoal, deleteGoal, updateAccountBalance } from "../lib/db";
 import { 
   Plus, 
@@ -16,7 +16,7 @@ import confetti from "canvas-confetti";
 import type { Goal } from "../lib/db";
 
 export const Goals: React.FC = () => {
-  const { goals, accounts, profile, emis, transactions, showToast, refreshData, goalBgImages, updateGoalBgImage } = useApp();
+  const { goals, accounts, profile, emis, transactions, showToast, refreshData, goalBgImages, updateGoalBgImage, fmt: formatIndianCurrency } = useApp();
   const [isAddGoalOpen, setIsAddGoalOpen] = useState(false);
   const [isAddFundsOpen, setIsAddFundsOpen] = useState(false);
   const [selectedGoal, setSelectedGoal] = useState<any | null>(null);

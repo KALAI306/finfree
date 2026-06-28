@@ -1,7 +1,10 @@
 import React, { useState, useRef } from "react";
 import { useApp } from "../context/AppContext";
-import { formatIndianCurrency, compressImage } from "../lib/utils";
+import { compressImage } from "../lib/utils";
 import { addAccount, deleteAccount, updateAccount, supabase, resetUserDatabase } from "../lib/db";
+import { Capacitor } from "@capacitor/core";
+import { isPinSet, setPin, clearPin, PinPad } from "../components/BiometricLock";
+import { CURRENCIES } from "../lib/utils";
 import {
   User,
   Wallet,
@@ -18,6 +21,8 @@ import {
   FileSpreadsheet,
   FolderOpen,
   PiggyBank,
+  Shield,
+  KeyRound,
 } from "lucide-react";
 
 // Budget Limits sub-component
@@ -77,6 +82,92 @@ const BudgetLimitsCard: React.FC<{
     </div>
   );
 };
+// App PIN lock sub-component (web only — native uses biometric)
+const AppPinCard: React.FC = () => {
+  const [pinEnabled, setPinEnabled] = useState(() => isPinSet());
+  const [step, setStep] = useState<'idle' | 'enter' | 'confirm'>('idle');
+  const [firstPin, setFirstPin] = useState('');
+  const [feedback, setFeedback] = useState('');
+
+  const handleFirstPin = (pin: string) => {
+    setFirstPin(pin);
+    setStep('confirm');
+    setFeedback('');
+  };
+
+  const handleConfirmPin = async (pin: string) => {
+    await setPin(pin);
+    setPinEnabled(true);
+    setStep('idle');
+    setFeedback('PIN set! You will be asked for it next time you open the app.');
+  };
+
+  const handleClear = () => {
+    clearPin();
+    setPinEnabled(false);
+    setStep('idle');
+    setFeedback('App PIN removed.');
+  };
+
+  if (Capacitor.isNativePlatform()) return null;
+
+  return (
+    <div className="glass-card rounded-2xl p-6 border border-border space-y-4">
+      <h4 className="text-base font-bold text-foreground mb-2 flex items-center gap-2">
+        <KeyRound className="w-5 h-5 text-gold-400" /> App PIN Lock
+      </h4>
+      <p className="text-xs text-muted-foreground">
+        Set a 4-digit PIN to lock the app when you reopen it in the browser. PIN is hashed and stored locally — never sent to servers.
+      </p>
+
+      {feedback && (
+        <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-primary/5 border border-primary/10 text-xs text-primary">
+          <Shield className="w-3.5 h-3.5 shrink-0" />{feedback}
+        </div>
+      )}
+
+      {step === 'idle' && (
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <div className={`w-2 h-2 rounded-full ${pinEnabled ? 'bg-green-400' : 'bg-muted-foreground/40'}`} />
+            <span className="text-xs text-muted-foreground">{pinEnabled ? 'PIN lock is active' : 'No PIN set'}</span>
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={() => { setStep('enter'); setFeedback(''); }}
+              className="px-3 py-1.5 rounded-lg bg-primary/10 hover:bg-primary/20 text-primary border border-primary/20 text-xs font-semibold transition-all cursor-pointer"
+            >
+              {pinEnabled ? 'Change PIN' : 'Set PIN'}
+            </button>
+            {pinEnabled && (
+              <button
+                onClick={handleClear}
+                className="px-3 py-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 text-xs font-semibold transition-all cursor-pointer"
+              >
+                Remove
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {step === 'enter' && (
+        <div className="flex flex-col items-center gap-3 pt-2">
+          <p className="text-xs font-medium text-muted-foreground">Enter a new 4-digit PIN</p>
+          <PinPad verify={false} onSuccess={handleFirstPin} onCancel={() => setStep('idle')} />
+        </div>
+      )}
+
+      {step === 'confirm' && (
+        <div className="flex flex-col items-center gap-3 pt-2">
+          <p className="text-xs font-medium text-muted-foreground">Confirm your PIN</p>
+          <PinPad verify={false} confirmPin={firstPin} onSuccess={handleConfirmPin} onCancel={() => setStep('enter')} />
+        </div>
+      )}
+    </div>
+  );
+};
+
 import { Modal } from "../components/Modal";
 import type { Account } from "../lib/db";
 import { exportData, downloadBackupJSON, downloadTransactionsCSV, readBackupFile, importData, type FinFreeBackup } from "../lib/exportImport";
@@ -84,7 +175,7 @@ import { getStorageMode, setStorageMode, type StorageMode } from "../lib/storage
 import { migrateCloudToLocal } from "../lib/migration";
 
 export const Settings: React.FC = () => {
-  const { user, profile, accounts, transactions, updateUserProfile, showToast, refreshData, customAccountTypes, addCustomAccountType, profileImage, updateProfileImage, budgetLimits, setBudgetLimit, removeBudgetLimit } = useApp();
+  const { user, profile, accounts, transactions, updateUserProfile, showToast, refreshData, customAccountTypes, addCustomAccountType, profileImage, updateProfileImage, budgetLimits, setBudgetLimit, removeBudgetLimit, currency, setCurrency, fmt: formatIndianCurrency } = useApp();
   
   // Profile settings state
   const [profileName, setProfileName] = useState(profile?.name || "Kalai");
@@ -740,6 +831,9 @@ export const Settings: React.FC = () => {
         {/* Budget Limits */}
         <BudgetLimitsCard budgetLimits={budgetLimits} setBudgetLimit={setBudgetLimit} removeBudgetLimit={removeBudgetLimit} />
 
+        {/* App PIN Lock (web only) */}
+        <AppPinCard />
+
         {/* Security & Password reset */}
         <div className="glass-card rounded-2xl p-6 border border-border space-y-4">
           <h4 className="text-base font-bold text-foreground mb-2 flex items-center gap-2">
@@ -768,6 +862,26 @@ export const Settings: React.FC = () => {
               </button>
             </div>
           </form>
+        </div>
+
+        {/* Currency */}
+        <div className="glass-card rounded-2xl p-6 border border-border space-y-4">
+          <h4 className="text-base font-bold text-foreground flex items-center gap-2">
+            <span className="text-lg">{CURRENCIES.find(c => c.code === currency)?.symbol ?? '₹'}</span> Display Currency
+          </h4>
+          <p className="text-xs text-muted-foreground">All amounts across the app will display in the selected currency.</p>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+            {CURRENCIES.map(c => (
+              <button
+                key={c.code}
+                onClick={() => setCurrency(c.code)}
+                className={`p-3 rounded-xl border-2 text-left transition-all ${currency === c.code ? 'border-primary bg-primary/10' : 'border-border/50 bg-white/[0.02] hover:border-border'}`}
+              >
+                <p className={`text-sm font-bold ${currency === c.code ? 'text-primary' : 'text-foreground'}`}>{c.symbol} {c.code}</p>
+                <p className="text-[10px] text-muted-foreground mt-0.5 truncate">{c.name}</p>
+              </button>
+            ))}
+          </div>
         </div>
 
         {/* Storage Mode */}

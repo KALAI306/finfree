@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { useApp } from "../context/AppContext";
-import { formatIndianCurrency, formatIndianNumberOnly } from "../lib/utils";
+import { formatIndianNumberOnly } from "../lib/utils";
 import { addInvestment, deleteInvestment, updateInvestment } from "../lib/db";
 import { 
   Plus, 
@@ -45,7 +45,7 @@ const investmentSchema = z.object({
 type InvestmentFormValues = z.infer<typeof investmentSchema>;
 
 export const Investments: React.FC = () => {
-  const { investments, user, showToast, refreshData, customAssetTypes, addCustomAssetType } = useApp();
+  const { investments, user, showToast, refreshData, customAssetTypes, addCustomAssetType, fmt: formatIndianCurrency } = useApp();
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [editingInvestment, setEditingInvestment] = useState<Investment | null>(null);
   const [tooltipActive, setTooltipActive] = useState(false);

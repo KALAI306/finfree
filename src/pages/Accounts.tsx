@@ -1,6 +1,5 @@
 import React, { useState } from "react";
 import { useApp } from "../context/AppContext";
-import { formatIndianCurrency } from "../lib/utils";
 import { addAccount, deleteAccount, updateAccount } from "../lib/db";
 import { 
   Plus, 
@@ -28,7 +27,8 @@ export const Accounts: React.FC = () => {
     showToast, 
     refreshData,
     customAccountTypes,
-    addCustomAccountType
+    addCustomAccountType,
+    fmt: formatIndianCurrency,
   } = useApp();
 
   const [isAddOpen, setIsAddOpen] = useState(false);
