@@ -109,7 +109,7 @@ const AppPinCard: React.FC = () => {
     setFeedback('App PIN removed.');
   };
 
-  if (Capacitor.isNativePlatform()) return null;
+  // Shown on both web and native (native uses biometric + PIN fallback)
 
   return (
     <div className="glass-card rounded-2xl p-6 border border-border space-y-4">

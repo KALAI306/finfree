@@ -149,10 +149,11 @@ interface LockProps { onUnlocked: () => void; }
 
 export const BiometricLock: React.FC<LockProps> = ({ onUnlocked }) => {
   const [mode, setMode] = useState<'checking' | 'biometric' | 'pin'>('checking');
+  const [bioAvailable, setBioAvailable] = useState(false);
   const [bioError, setBioError] = useState('');
   const doneRef = useRef(false);
+  const bioRef = useRef<any>(null);
 
-  // Call onUnlocked exactly once, regardless of how many paths lead here
   const safeUnlock = useCallback(() => {
     if (doneRef.current) return;
     doneRef.current = true;
@@ -160,64 +161,87 @@ export const BiometricLock: React.FC<LockProps> = ({ onUnlocked }) => {
     onUnlocked();
   }, [onUnlocked]);
 
+  const triggerBiometric = useCallback(async () => {
+    setBioError('');
+    try {
+      const bio = bioRef.current || await getBiometric();
+      if (!bio) { safeUnlock(); return; }
+      await bio.authenticate({
+        reason: 'Unlock FinFree',
+        cancelTitle: 'Use PIN',
+        allowDeviceCredential: false,
+        iosFallbackTitle: 'Use PIN',
+      });
+      safeUnlock();
+    } catch (e: any) {
+      const msg = (e?.code || e?.message || '').toLowerCase();
+      if (msg.includes('cancel') || msg.includes('usercancel')) {
+        // User tapped "Use PIN" / cancelled → show PIN pad
+        if (isPinSet()) setMode('pin');
+        else setBioError('Cancelled. Tap to try again.');
+      } else {
+        setBioError('Biometric failed. Tap to retry or use PIN below.');
+      }
+    }
+  }, [safeUnlock]);
+
   useEffect(() => {
-    // Already unlocked in this browser/app session
     if (sessionUnlocked()) { safeUnlock(); return; }
 
     if (!Capacitor.isNativePlatform()) {
-      // Web: PIN lock if the user set one; otherwise let through immediately
+      // Web: PIN lock if the user set one; otherwise let through
       if (isPinSet()) setMode('pin');
       else safeUnlock();
       return;
     }
 
     // ── Native (Android / iOS) ────────────────────────────────────────────────
-    // Hard timeout: if the plugin never responds within 5 seconds, unlock anyway.
-    // This prevents the app from getting permanently stuck on the loading spinner.
-    const timeout = setTimeout(() => { safeUnlock(); }, 5000);
+    // Timeout: if the plugin hangs, fall back gracefully
+    const timeout = setTimeout(() => {
+      if (isPinSet()) setMode('pin');
+      else safeUnlock();
+    }, 5000);
 
     const init = async () => {
       try {
         const bio = await getBiometric();
-        if (!bio) { clearTimeout(timeout); safeUnlock(); return; }
+        bioRef.current = bio;
+
+        if (!bio) {
+          clearTimeout(timeout);
+          if (isPinSet()) setMode('pin');
+          else safeUnlock();
+          return;
+        }
 
         const info = await bio.checkBiometry();
-        clearTimeout(timeout); // plugin responded — cancel the timeout
+        clearTimeout(timeout);
 
-        if (!info.isAvailable) { safeUnlock(); return; }
+        const hasBio = !!info.isAvailable;
+        setBioAvailable(hasBio);
 
-        setMode('biometric');
-        tryBiometric();
+        if (isPinSet()) {
+          // PIN set → show PIN pad; user can switch to fingerprint with button
+          setMode('pin');
+        } else if (hasBio) {
+          // No PIN, bio available → show fingerprint screen and auto-trigger
+          setMode('biometric');
+          // Small delay so the UI renders before the system dialog appears
+          setTimeout(() => triggerBiometric(), 300);
+        } else {
+          // No PIN, no bio → no lock
+          safeUnlock();
+        }
       } catch {
         clearTimeout(timeout);
-        safeUnlock(); // any error → let the user in
+        if (isPinSet()) setMode('pin');
+        else safeUnlock();
       }
     };
 
     init();
     return () => clearTimeout(timeout);
-  }, [safeUnlock]);
-
-  const tryBiometric = async () => {
-    setBioError('');
-    try {
-      const bio = await getBiometric();
-      await bio.authenticate({
-        reason: 'Unlock FinFree',
-        cancelTitle: 'Use PIN',
-        allowDeviceCredential: true,
-        iosFallbackTitle: 'Use Passcode',
-      });
-      safeUnlock();
-    } catch (e: any) {
-      if (e?.code === 'userCancel') {
-        if (isPinSet()) setMode('pin');
-        else setBioError('Authentication cancelled');
-      } else {
-        setBioError('Biometric failed — try again or use PIN');
-      }
-    }
-  };
+  }, [safeUnlock, triggerBiometric]);
 
   if (mode === 'checking') {
     return (
@@ -249,16 +273,16 @@ export const BiometricLock: React.FC<LockProps> = ({ onUnlocked }) => {
           <div className="w-20 h-20 rounded-full bg-primary/10 border-2 border-primary/20 flex items-center justify-center">
             <Fingerprint className="w-10 h-10 text-primary" />
           </div>
-          {bioError && <p className="text-sm text-rose-400 text-center">{bioError}</p>}
+          {bioError && <p className="text-sm text-rose-400 text-center max-w-xs">{bioError}</p>}
           <div className="flex flex-col items-center gap-2">
-            <button onClick={tryBiometric}
+            <button onClick={triggerBiometric}
               className="btn-primary px-8 py-3 flex items-center gap-2 cursor-pointer">
               <Fingerprint className="w-4 h-4" />
-              {bioError ? 'Try Again' : 'Use Biometrics'}
+              {bioError ? 'Try Again' : 'Use Fingerprint'}
             </button>
             {isPinSet() && (
               <button onClick={() => setMode('pin')}
-                className="text-xs text-muted-foreground hover:text-primary transition-colors cursor-pointer">
+                className="text-xs text-muted-foreground hover:text-primary transition-colors cursor-pointer mt-1">
                 Use PIN instead
               </button>
             )}
@@ -273,8 +297,17 @@ export const BiometricLock: React.FC<LockProps> = ({ onUnlocked }) => {
           <PinPad
             verify={true}
             onSuccess={safeUnlock}
-            onCancel={Capacitor.isNativePlatform() ? () => setMode('biometric') : undefined}
+            onCancel={undefined}
           />
+          {/* Show "Use Fingerprint" button if bio is available on Android */}
+          {Capacitor.isNativePlatform() && bioAvailable && (
+            <button
+              onClick={() => { setMode('biometric'); setTimeout(() => triggerBiometric(), 100); }}
+              className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-primary transition-colors cursor-pointer mt-2">
+              <Fingerprint className="w-3.5 h-3.5" />
+              Use fingerprint instead
+            </button>
+          )}
         </div>
       )}
     </div>
