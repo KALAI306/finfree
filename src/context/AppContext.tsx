@@ -353,17 +353,53 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         const liquid = accData.reduce((s, a) => s + Number(a.balance), 0);
         const invested = invData.reduce((s, i) => s + Number(i.current_value), 0);
         const debt = profData ? Number(profData.family_debt) : 0;
+        const currentNW = liquid + invested - debt;
         const month = new Date().toISOString().slice(0, 7);
         await localDb.networth_snapshots.put({
           id: `${uId}_${month}`,
           user_id: uId,
           month,
-          net_worth: liquid + invested - debt,
+          net_worth: currentNW,
           liquid_cash: liquid,
           invested,
           debt,
           recorded_at: new Date().toISOString(),
         });
+
+        // Backfill historical snapshots from transaction history (one-time seed)
+        const existingSnaps = await localDb.networth_snapshots.where('user_id').equals(uId).toArray();
+        if (existingSnaps.length < 2 && txData.length > 0) {
+          // Group transactions by month
+          const byMonth: Record<string, { income: number; expense: number }> = {};
+          for (const tx of txData) {
+            const m = (tx.date || '').slice(0, 7);
+            if (!m || m === month) continue;
+            if (!byMonth[m]) byMonth[m] = { income: 0, expense: 0 };
+            if (tx.type === 'income') byMonth[m].income += Number(tx.amount);
+            else if (tx.type === 'expense') byMonth[m].expense += Number(tx.amount);
+          }
+          const pastMonths = Object.keys(byMonth).sort().reverse(); // newest-first
+          let nw = currentNW;
+          for (const m of pastMonths) {
+            // Reverse this month's effect to get the NW at start of that month
+            const { income, expense } = byMonth[m];
+            nw = nw - income + expense;
+            const snapId = `${uId}_${m}`;
+            const exists = await localDb.networth_snapshots.get(snapId);
+            if (!exists) {
+              await localDb.networth_snapshots.put({
+                id: snapId,
+                user_id: uId,
+                month: m,
+                net_worth: nw,
+                liquid_cash: nw > 0 ? nw : 0,
+                invested: 0,
+                debt,
+                recorded_at: new Date().toISOString(),
+              });
+            }
+          }
+        }
       } catch { /* non-critical */ }
 
       evaluateFinancialAlerts(profData, emiData, goalData);

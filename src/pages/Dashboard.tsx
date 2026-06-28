@@ -350,7 +350,7 @@ export const Dashboard: React.FC = () => {
       </div>
 
       {/* ── Net Worth History ── */}
-      {nwHistory.length >= 2 && (
+      {nwHistory.length >= 1 && (
         <div className="aurora-card p-5 animate-fade-in-up stagger-2">
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-2">
@@ -359,42 +359,58 @@ export const Dashboard: React.FC = () => {
               </div>
               <span className="label-xs">Net Worth History</span>
             </div>
-            <span className="text-[10px] text-muted-foreground">{nwHistory.length} months</span>
+            <span className="text-[10px] text-muted-foreground">{nwHistory.length} month{nwHistory.length > 1 ? 's' : ''}</span>
           </div>
-          <div className="relative h-20">
-            <svg className="w-full h-full" viewBox={`0 0 ${nwHistory.length * 40} 80`} preserveAspectRatio="none">
-              {(() => {
-                const vals = nwHistory.map(s => s.net_worth);
-                const min = Math.min(...vals);
-                const max = Math.max(...vals);
-                const range = max - min || 1;
-                const pts = vals.map((v, i) => `${i * 40 + 20},${70 - ((v - min) / range) * 60}`).join(' ');
-                const areaBot = `${(vals.length - 1) * 40 + 20},70 20,70`;
-                return (
-                  <>
-                    <defs>
-                      <linearGradient id="nwGrad" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor={accentColor} stopOpacity="0.3" />
-                        <stop offset="100%" stopColor={accentColor} stopOpacity="0.02" />
-                      </linearGradient>
-                    </defs>
-                    <polygon points={`${pts} ${areaBot}`} fill="url(#nwGrad)" />
-                    <polyline points={pts} fill="none" stroke={accentColor} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                    {vals.map((v, i) => (
-                      <circle key={i} cx={i * 40 + 20} cy={70 - ((v - min) / range) * 60} r="3" fill={accentColor} />
-                    ))}
-                  </>
-                );
-              })()}
-            </svg>
-            <div className="absolute bottom-0 left-0 right-0 flex justify-between text-[9px] text-muted-foreground/50 px-1">
-              {nwHistory.map(s => <span key={s.month}>{s.month.slice(5)}</span>)}
+
+          {nwHistory.length === 1 ? (
+            /* Single month — show as a stat */
+            <div className="flex items-center justify-between px-2">
+              <div>
+                <p className="text-[10px] text-muted-foreground mb-1">{nwHistory[0].month}</p>
+                <p className="text-2xl font-bold font-mono" style={{ color: accentColor }}>
+                  {formatIndianCurrency(nwHistory[0].net_worth)}
+                </p>
+              </div>
+              <p className="text-[10px] text-muted-foreground text-right">History builds<br/>month by month</p>
             </div>
-          </div>
-          <div className="flex justify-between mt-3 text-xs">
-            <span className="text-muted-foreground">Lowest: <span className="font-mono text-foreground">{formatIndianCurrency(Math.min(...nwHistory.map(s => s.net_worth)))}</span></span>
-            <span className="text-muted-foreground">Latest: <span className="font-mono font-bold" style={{ color: accentColor }}>{formatIndianCurrency(nwHistory[nwHistory.length - 1]?.net_worth ?? 0)}</span></span>
-          </div>
+          ) : (
+            <>
+              <div className="relative h-20">
+                <svg className="w-full h-full" viewBox={`0 0 ${nwHistory.length * 40} 80`} preserveAspectRatio="none">
+                  {(() => {
+                    const vals = nwHistory.map(s => s.net_worth);
+                    const min = Math.min(...vals);
+                    const max = Math.max(...vals);
+                    const range = max - min || 1;
+                    const pts = vals.map((v, i) => `${i * 40 + 20},${70 - ((v - min) / range) * 60}`).join(' ');
+                    const areaBot = `${(vals.length - 1) * 40 + 20},70 20,70`;
+                    return (
+                      <>
+                        <defs>
+                          <linearGradient id="nwGrad" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0%" stopColor={accentColor} stopOpacity="0.3" />
+                            <stop offset="100%" stopColor={accentColor} stopOpacity="0.02" />
+                          </linearGradient>
+                        </defs>
+                        <polygon points={`${pts} ${areaBot}`} fill="url(#nwGrad)" />
+                        <polyline points={pts} fill="none" stroke={accentColor} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                        {vals.map((v, i) => (
+                          <circle key={i} cx={i * 40 + 20} cy={70 - ((v - min) / range) * 60} r="3" fill={accentColor} />
+                        ))}
+                      </>
+                    );
+                  })()}
+                </svg>
+                <div className="absolute bottom-0 left-0 right-0 flex justify-between text-[9px] text-muted-foreground/50 px-1">
+                  {nwHistory.map(s => <span key={s.month}>{s.month.slice(5)}</span>)}
+                </div>
+              </div>
+              <div className="flex justify-between mt-3 text-xs">
+                <span className="text-muted-foreground">Lowest: <span className="font-mono text-foreground">{formatIndianCurrency(Math.min(...nwHistory.map(s => s.net_worth)))}</span></span>
+                <span className="text-muted-foreground">Latest: <span className="font-mono font-bold" style={{ color: accentColor }}>{formatIndianCurrency(nwHistory[nwHistory.length - 1]?.net_worth ?? 0)}</span></span>
+              </div>
+            </>
+          )}
         </div>
       )}
 

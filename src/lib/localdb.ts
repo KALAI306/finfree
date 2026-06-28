@@ -28,11 +28,14 @@ export interface LocalTransaction {
   id: string;
   user_id: string;
   account_id?: string;
-  type: 'income' | 'expense';
+  type: 'income' | 'expense' | 'transfer';
   category: string;
   amount: number;
+  note?: string;
   description?: string;
   date: string;
+  is_recurring: boolean;
+  transfer_to_account_id?: string | null;
   created_at: string;
 }
 
