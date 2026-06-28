@@ -119,6 +119,10 @@ export async function getProfile(userId: string): Promise<Profile> {
 }
 
 export async function updateProfile(profile: Partial<Profile> & { id: string }): Promise<Profile> {
+  if (isLocal()) {
+    await localDb.profiles.update(profile.id, profile as any);
+    return (await localDb.profiles.get(profile.id)) as unknown as Profile;
+  }
   const { data, error } = await supabase!
     .from("profiles")
     .update(profile)

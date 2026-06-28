@@ -19,6 +19,7 @@ import type {
 } from "../lib/db";
 import { localDb } from "../lib/localdb";
 import { getStorageMode } from "../lib/storageMode";
+import { migrateCloudToLocal } from "../lib/migration";
 import confetti from "canvas-confetti";
 
 export type ToastType = "success" | "warning" | "error" | "info";
@@ -226,7 +227,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           localDb.emis.where('user_id').equals(uId).toArray(),
           localDb.goals.where('user_id').equals(uId).toArray(),
         ]);
-        profData = (prof || { id: uId, name: 'You', monthly_income: 0, monthly_expenses: 0, savings_rate: 0, target_corpus: 10000000, current_age: 25, retirement_age: 45 }) as unknown as Profile;
+        profData = (prof || { id: uId, name: 'You', age: 25, monthly_salary: 0, freedom_target: 10000000, target_freedom_age: 50, family_debt: 0, is_admin: false, created_at: new Date().toISOString() }) as unknown as Profile;
         accData = accs as Account[];
         txData = txs as Transaction[];
         invData = invs as Investment[];
@@ -336,18 +337,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const initAuth = async () => {
       setLoading(true);
 
-      // Local-only mode: use a stable local user ID, no login required
-      if (getStorageMode() === 'local') {
-        let localUserId = localStorage.getItem('finfree_local_user_id');
-        if (!localUserId) {
-          localUserId = 'local-' + Math.random().toString(36).slice(2, 10);
-          localStorage.setItem('finfree_local_user_id', localUserId);
-        }
-        setUser({ id: localUserId, email: 'local@finfree.app' });
-        setLoading(false);
-        return;
-      }
-
       if (supabase) {
         const { data: { session } } = await supabase.auth.getSession();
 
@@ -388,8 +377,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   useEffect(() => {
     if (user) {
-      refreshData(user.id);
-      // Show welcome tour once per user
+      const runDataLoad = async () => {
+        if (getStorageMode() === 'local') {
+          const migrated = await migrateCloudToLocal(user.id);
+          if (migrated) {
+            showToast('Your cloud data has been synced locally!', 'success');
+          }
+        }
+        refreshData(user.id);
+      };
+      runDataLoad();
       const key = `finfree_welcomed_${user.id}`;
       if (!localStorage.getItem(key)) {
         setShowWelcomeTour(true);

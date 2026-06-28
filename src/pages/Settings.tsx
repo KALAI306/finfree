@@ -22,6 +22,7 @@ import { Modal } from "../components/Modal";
 import type { Account } from "../lib/db";
 import { exportData, downloadBackupJSON, downloadTransactionsCSV, readBackupFile, importData, type FinFreeBackup } from "../lib/exportImport";
 import { getStorageMode, setStorageMode, type StorageMode } from "../lib/storageMode";
+import { migrateCloudToLocal } from "../lib/migration";
 
 export const Settings: React.FC = () => {
   const { user, profile, accounts, transactions, updateUserProfile, showToast, refreshData, customAccountTypes, addCustomAccountType, profileImage, updateProfileImage } = useApp();
@@ -45,10 +46,17 @@ export const Settings: React.FC = () => {
   const [importPreview, setImportPreview] = useState<FinFreeBackup | null>(null);
   const importFileRef = useRef<HTMLInputElement>(null);
 
-  const handleStorageModeChange = (mode: StorageMode) => {
+  const handleStorageModeChange = async (mode: StorageMode) => {
     setStorageMode(mode);
     setStorageModeState(mode);
-    showToast(`Switched to ${mode === 'local' ? 'Local' : 'Cloud'} storage`, 'success');
+    if (mode === 'local' && user) {
+      showToast('Syncing your cloud data locally…', 'info');
+      const migrated = await migrateCloudToLocal(user.id);
+      showToast(migrated ? 'Data synced! Now using local storage.' : 'Switched to local storage.', 'success');
+    } else {
+      showToast(`Switched to ${mode === 'local' ? 'Local' : 'Cloud'} storage`, 'success');
+    }
+    refreshData();
   };
 
   const handleExportJSON = async () => {
@@ -451,7 +459,14 @@ export const Settings: React.FC = () => {
           <h4 className="text-base font-bold text-foreground mb-2 flex items-center gap-2">
             <User className="w-5 h-5 text-gold-400" /> Edit Profile
           </h4>
-          
+
+          {user?.email && (
+            <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-primary/5 border border-primary/10 mb-2">
+              <span className="text-xs text-muted-foreground">Logged in as</span>
+              <span className="text-xs font-semibold text-primary truncate">{user.email}</span>
+            </div>
+          )}
+
           <form onSubmit={handleUpdateProfile} className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
