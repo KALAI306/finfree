@@ -28,6 +28,10 @@ jobs:
       # 4. Build web app
       - name: Build web app
         run: npm run build
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          VITE_GEMINI_API_KEY: ${{ secrets.VITE_GEMINI_API_KEY }}
 
       # 5. Set up Java 17 (required for Android)
       - name: Set up Java 17
