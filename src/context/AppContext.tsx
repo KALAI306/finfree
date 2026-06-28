@@ -9,14 +9,16 @@ import {
   getGoals,
   updateProfile as dbUpdateProfile
 } from "../lib/db";
-import type { 
-  Profile, 
-  Account, 
-  Transaction, 
-  Investment, 
-  EMI, 
-  Goal 
+import type {
+  Profile,
+  Account,
+  Transaction,
+  Investment,
+  EMI,
+  Goal
 } from "../lib/db";
+import { localDb } from "../lib/localdb";
+import { getStorageMode } from "../lib/storageMode";
 import confetti from "canvas-confetti";
 
 export type ToastType = "success" | "warning" | "error" | "info";
@@ -209,14 +211,42 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const uId = targetUserId ?? user?.id;
     if (!uId) return;
     try {
-      const [profData, accData, txData, invData, emiData, goalData] = await Promise.all([
-        getProfile(uId),
-        getAccounts(uId),
-        getTransactions(uId),
-        getInvestments(uId),
-        getEmis(uId),
-        getGoals(uId)
-      ]);
+      const mode = getStorageMode();
+
+      let profData: Profile, accData: Account[], txData: Transaction[],
+          invData: Investment[], emiData: EMI[], goalData: Goal[];
+
+      if (mode === 'local') {
+        // Read from IndexedDB (Dexie)
+        const [prof, accs, txs, invs, emis, goals] = await Promise.all([
+          localDb.profiles.get(uId),
+          localDb.accounts.where('user_id').equals(uId).toArray(),
+          localDb.transactions.where('user_id').equals(uId).toArray(),
+          localDb.investments.where('user_id').equals(uId).toArray(),
+          localDb.emis.where('user_id').equals(uId).toArray(),
+          localDb.goals.where('user_id').equals(uId).toArray(),
+        ]);
+        profData = (prof || { id: uId, name: 'You', monthly_income: 0, monthly_expenses: 0, savings_rate: 0, target_corpus: 10000000, current_age: 25, retirement_age: 45 }) as unknown as Profile;
+        accData = accs as Account[];
+        txData = txs as Transaction[];
+        invData = invs as Investment[];
+        emiData = emis as unknown as EMI[];
+        goalData = goals as Goal[];
+      } else {
+        // Read from Supabase (cloud) — check connectivity first
+        if (!navigator.onLine) {
+          showToast("You're offline. Showing last loaded data.", "warning");
+          return;
+        }
+        [profData, accData, txData, invData, emiData, goalData] = await Promise.all([
+          getProfile(uId),
+          getAccounts(uId),
+          getTransactions(uId),
+          getInvestments(uId),
+          getEmis(uId),
+          getGoals(uId)
+        ]);
+      }
 
       setProfile(profData);
       setAccounts(accData);
@@ -225,11 +255,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setEmis(emiData);
       setGoals(goalData);
 
-      // Rule evaluations for alerts (Triggered on data updates)
       evaluateFinancialAlerts(profData, emiData, goalData);
-    } catch (err) {
-      console.error("Error refreshing dashboard data:", err);
-      showToast("Failed to refresh financial details", "error");
+    } catch (err: any) {
+      console.error("Error refreshing data:", err);
+      if (!navigator.onLine || err?.message?.includes('fetch')) {
+        showToast("You're offline. Check your internet connection.", "warning");
+      } else {
+        showToast("Failed to refresh financial details", "error");
+      }
     }
   };
 
@@ -303,6 +336,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const initAuth = async () => {
       setLoading(true);
 
+      // Local-only mode: use a stable local user ID, no login required
+      if (getStorageMode() === 'local') {
+        let localUserId = localStorage.getItem('finfree_local_user_id');
+        if (!localUserId) {
+          localUserId = 'local-' + Math.random().toString(36).slice(2, 10);
+          localStorage.setItem('finfree_local_user_id', localUserId);
+        }
+        setUser({ id: localUserId, email: 'local@finfree.app' });
+        setLoading(false);
+        return;
+      }
+
       if (supabase) {
         const { data: { session } } = await supabase.auth.getSession();
 
@@ -315,7 +360,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         const { data: { subscription } } = supabase.auth.onAuthStateChange(
           async (event, session) => {
             if (session?.user) {
-              // Clear previous user's data immediately so stale data never shows for the new user
               setProfile(null);
               setAccounts([]);
               setTransactions([]);
@@ -326,7 +370,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             } else if (event === "SIGNED_OUT") {
               setUser(null);
             }
-            // Ignore other null-session events (TOKEN_REFRESHED failures, OAuth redirects)
           }
         );
         unsubscribe = subscription.unsubscribe;

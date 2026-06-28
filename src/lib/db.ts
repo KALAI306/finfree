@@ -1,4 +1,9 @@
 import { createClient } from "@supabase/supabase-js";
+import { localDb } from './localdb';
+import { getStorageMode } from './storageMode';
+import { v4 as uuidv4 } from 'uuid';
+
+const isLocal = () => getStorageMode() === 'local';
 
 // Database Type Definitions
 export interface Profile {
@@ -137,48 +142,43 @@ export async function getAccounts(userId: string): Promise<Account[]> {
 }
 
 export async function addAccount(account: Omit<Account, "id" | "created_at">): Promise<Account> {
-  const { data, error } = await supabase!
-    .from("accounts")
-    .insert([account])
-    .select()
-    .single();
-
+  if (isLocal()) {
+    const record = { ...account, id: uuidv4(), created_at: new Date().toISOString() } as Account;
+    await localDb.accounts.put(record);
+    return record;
+  }
+  const { data, error } = await supabase!.from("accounts").insert([account]).select().single();
   if (error) throw error;
   return data;
 }
 
 export async function updateAccountBalance(accountId: string, amountChange: number): Promise<void> {
-  const { data: currentAcc, error: getErr } = await supabase!
-    .from("accounts")
-    .select("balance")
-    .eq("id", accountId)
-    .single();
-
+  if (isLocal()) {
+    const acc = await localDb.accounts.get(accountId);
+    if (!acc) return;
+    await localDb.accounts.update(accountId, { balance: Number((Number(acc.balance) + amountChange).toFixed(2)) });
+    return;
+  }
+  const { data: currentAcc, error: getErr } = await supabase!.from("accounts").select("balance").eq("id", accountId).single();
   if (getErr) throw getErr;
-
   const newBalance = Number((Number(currentAcc.balance) + amountChange).toFixed(2));
-
-  const { error: updErr } = await supabase!
-    .from("accounts")
-    .update({ balance: newBalance })
-    .eq("id", accountId);
-
+  const { error: updErr } = await supabase!.from("accounts").update({ balance: newBalance }).eq("id", accountId);
   if (updErr) throw updErr;
 }
 
 export async function deleteAccount(accountId: string): Promise<void> {
+  if (isLocal()) { await localDb.accounts.delete(accountId); return; }
   const { error } = await supabase!.from("accounts").delete().eq("id", accountId);
   if (error) throw error;
 }
 
 export async function updateAccount(account: Partial<Account> & { id: string }): Promise<Account> {
-  const { data, error } = await supabase!
-    .from("accounts")
-    .update(account)
-    .eq("id", account.id)
-    .select()
-    .single();
-
+  if (isLocal()) {
+    await localDb.accounts.update(account.id, account);
+    const updated = await localDb.accounts.get(account.id);
+    return updated as Account;
+  }
+  const { data, error } = await supabase!.from("accounts").update(account).eq("id", account.id).select().single();
   if (error) throw error;
   return data;
 }
@@ -195,86 +195,78 @@ export async function getTransactions(userId: string): Promise<Transaction[]> {
 }
 
 export async function addTransaction(tx: Omit<Transaction, "id" | "created_at">): Promise<Transaction> {
-  const { data, error } = await supabase!
-    .from("transactions")
-    .insert([tx])
-    .select()
-    .single();
-
-  if (error) throw error;
-
-  if (tx.type === "income") {
-    await updateAccountBalance(tx.account_id, tx.amount);
-  } else if (tx.type === "expense") {
-    await updateAccountBalance(tx.account_id, -tx.amount);
-  } else if (tx.type === "transfer" && tx.transfer_to_account_id) {
+  let record: Transaction;
+  if (isLocal()) {
+    record = { ...tx, id: uuidv4(), created_at: new Date().toISOString() } as Transaction;
+    await localDb.transactions.put(record as any);
+  } else {
+    const { data, error } = await supabase!.from("transactions").insert([tx]).select().single();
+    if (error) throw error;
+    record = data;
+  }
+  if (tx.type === "income") await updateAccountBalance(tx.account_id, tx.amount);
+  else if (tx.type === "expense") await updateAccountBalance(tx.account_id, -tx.amount);
+  else if (tx.type === "transfer" && tx.transfer_to_account_id) {
     await updateAccountBalance(tx.account_id, -tx.amount);
     await updateAccountBalance(tx.transfer_to_account_id, tx.amount);
   }
-
-  return data;
+  return record;
 }
 
 export async function deleteTransaction(txId: string): Promise<void> {
-  const { data: txToDelete, error: findErr } = await supabase!
-    .from("transactions")
-    .select("*")
-    .eq("id", txId)
-    .single();
-
-  if (findErr || !txToDelete) return;
-
-  if (txToDelete.type === "income") {
-    await updateAccountBalance(txToDelete.account_id, -txToDelete.amount);
-  } else if (txToDelete.type === "expense") {
-    await updateAccountBalance(txToDelete.account_id, txToDelete.amount);
-  } else if (txToDelete.type === "transfer" && txToDelete.transfer_to_account_id) {
+  let txToDelete: any;
+  if (isLocal()) {
+    txToDelete = await localDb.transactions.get(txId);
+    if (!txToDelete) return;
+    await localDb.transactions.delete(txId);
+  } else {
+    const { data, error: findErr } = await supabase!.from("transactions").select("*").eq("id", txId).single();
+    if (findErr || !data) return;
+    txToDelete = data;
+    const { error } = await supabase!.from("transactions").delete().eq("id", txId);
+    if (error) throw error;
+  }
+  if (txToDelete.type === "income") await updateAccountBalance(txToDelete.account_id, -txToDelete.amount);
+  else if (txToDelete.type === "expense") await updateAccountBalance(txToDelete.account_id, txToDelete.amount);
+  else if (txToDelete.type === "transfer" && txToDelete.transfer_to_account_id) {
     await updateAccountBalance(txToDelete.account_id, txToDelete.amount);
     await updateAccountBalance(txToDelete.transfer_to_account_id, -txToDelete.amount);
   }
-
-  const { error } = await supabase!.from("transactions").delete().eq("id", txId);
-  if (error) throw error;
 }
 
 export async function updateTransaction(tx: Partial<Transaction> & { id: string }): Promise<Transaction> {
-  const { data: oldTx, error: findErr } = await supabase!
-    .from("transactions")
-    .select("*")
-    .eq("id", tx.id)
-    .single();
+  const oldTx = isLocal()
+    ? await localDb.transactions.get(tx.id)
+    : await supabase!.from("transactions").select("*").eq("id", tx.id).single().then(r => r.data);
 
-  if (findErr || !oldTx) throw new Error("Transaction not found");
+  if (!oldTx) throw new Error("Transaction not found");
 
-  if (oldTx.type === "income") {
-    await updateAccountBalance(oldTx.account_id, -oldTx.amount);
-  } else if (oldTx.type === "expense") {
-    await updateAccountBalance(oldTx.account_id, oldTx.amount);
-  } else if (oldTx.type === "transfer" && oldTx.transfer_to_account_id) {
+  // Reverse old balance effect
+  if (oldTx.type === "income") await updateAccountBalance(oldTx.account_id, -oldTx.amount);
+  else if (oldTx.type === "expense") await updateAccountBalance(oldTx.account_id, oldTx.amount);
+  else if (oldTx.type === "transfer" && oldTx.transfer_to_account_id) {
     await updateAccountBalance(oldTx.account_id, oldTx.amount);
     await updateAccountBalance(oldTx.transfer_to_account_id, -oldTx.amount);
   }
 
   const mergedTx = { ...oldTx, ...tx } as Transaction;
 
-  if (mergedTx.type === "income") {
-    await updateAccountBalance(mergedTx.account_id, mergedTx.amount);
-  } else if (mergedTx.type === "expense") {
-    await updateAccountBalance(mergedTx.account_id, -mergedTx.amount);
-  } else if (mergedTx.type === "transfer" && mergedTx.transfer_to_account_id) {
+  if (isLocal()) {
+    await localDb.transactions.update(tx.id, tx as any);
+  } else {
+    const { error } = await supabase!.from("transactions").update(tx).eq("id", tx.id);
+    if (error) throw error;
+  }
+
+  // Apply new balance effect
+  if (mergedTx.type === "income") await updateAccountBalance(mergedTx.account_id, mergedTx.amount);
+  else if (mergedTx.type === "expense") await updateAccountBalance(mergedTx.account_id, -mergedTx.amount);
+  else if (mergedTx.type === "transfer" && mergedTx.transfer_to_account_id) {
     await updateAccountBalance(mergedTx.account_id, -mergedTx.amount);
     await updateAccountBalance(mergedTx.transfer_to_account_id, mergedTx.amount);
   }
 
-  const { data, error } = await supabase!
-    .from("transactions")
-    .update(tx)
-    .eq("id", tx.id)
-    .select()
-    .single();
-
-  if (error) throw error;
-  return data;
+  return mergedTx;
 }
 
 export async function getInvestments(userId: string): Promise<Investment[]> {
@@ -289,29 +281,28 @@ export async function getInvestments(userId: string): Promise<Investment[]> {
 }
 
 export async function addInvestment(inv: Omit<Investment, "id" | "created_at">): Promise<Investment> {
-  const { data, error } = await supabase!
-    .from("investments")
-    .insert([inv])
-    .select()
-    .single();
-
+  if (isLocal()) {
+    const record = { ...inv, id: uuidv4(), created_at: new Date().toISOString() } as Investment;
+    await localDb.investments.put(record);
+    return record;
+  }
+  const { data, error } = await supabase!.from("investments").insert([inv]).select().single();
   if (error) throw error;
   return data;
 }
 
 export async function updateInvestment(inv: Partial<Investment> & { id: string }): Promise<Investment> {
-  const { data, error } = await supabase!
-    .from("investments")
-    .update(inv)
-    .eq("id", inv.id)
-    .select()
-    .single();
-
+  if (isLocal()) {
+    await localDb.investments.update(inv.id, inv);
+    return (await localDb.investments.get(inv.id)) as Investment;
+  }
+  const { data, error } = await supabase!.from("investments").update(inv).eq("id", inv.id).select().single();
   if (error) throw error;
   return data;
 }
 
 export async function deleteInvestment(invId: string): Promise<void> {
+  if (isLocal()) { await localDb.investments.delete(invId); return; }
   const { error } = await supabase!.from("investments").delete().eq("id", invId);
   if (error) throw error;
 }
@@ -328,68 +319,62 @@ export async function getEmis(userId: string): Promise<EMI[]> {
 }
 
 export async function addEmi(emi: Omit<EMI, "id" | "created_at">): Promise<EMI> {
-  const { data, error } = await supabase!
-    .from("emis")
-    .insert([emi])
-    .select()
-    .single();
-
+  if (isLocal()) {
+    const record = { ...emi, id: uuidv4(), created_at: new Date().toISOString() } as unknown as EMI;
+    await localDb.emis.put(record as any);
+    return record;
+  }
+  const { data, error } = await supabase!.from("emis").insert([emi]).select().single();
   if (error) throw error;
   return data;
 }
 
 export async function updateEmi(emi: Partial<EMI> & { id: string }): Promise<EMI> {
-  const { data, error } = await supabase!
-    .from("emis")
-    .update(emi)
-    .eq("id", emi.id)
-    .select()
-    .single();
-
+  if (isLocal()) {
+    await localDb.emis.update(emi.id, emi as any);
+    return (await localDb.emis.get(emi.id)) as unknown as EMI;
+  }
+  const { data, error } = await supabase!.from("emis").update(emi).eq("id", emi.id).select().single();
   if (error) throw error;
   return data;
 }
 
 export async function deleteEmi(emiId: string): Promise<void> {
+  if (isLocal()) { await localDb.emis.delete(emiId); return; }
   const { error } = await supabase!.from("emis").delete().eq("id", emiId);
   if (error) throw error;
 }
 
 export async function getGoals(userId: string): Promise<Goal[]> {
-  const { data, error } = await supabase!
-    .from("goals")
-    .select("*")
-    .eq("user_id", userId)
-    .order("created_at", { ascending: true });
-
+  if (isLocal()) return localDb.goals.where('user_id').equals(userId).toArray() as Promise<Goal[]>;
+  const { data, error } = await supabase!.from("goals").select("*").eq("user_id", userId).order("created_at", { ascending: true });
   if (error) throw error;
   return data || [];
 }
 
 export async function addGoal(goal: Omit<Goal, "id" | "created_at">): Promise<Goal> {
-  const { data, error } = await supabase!
-    .from("goals")
-    .insert([goal])
-    .select()
-    .single();
-
+  if (isLocal()) {
+    const record = { ...goal, id: uuidv4(), created_at: new Date().toISOString() } as Goal;
+    await localDb.goals.put(record as any);
+    return record;
+  }
+  const { data, error } = await supabase!.from("goals").insert([goal]).select().single();
   if (error) throw error;
   return data;
 }
 
 export async function updateGoal(goal: Partial<Goal> & { id: string }): Promise<Goal> {
-  const { data, error } = await supabase!
-    .from("goals")
-    .update(goal)
-    .eq("id", goal.id)
-    .select()
-    .single();
-
+  if (isLocal()) {
+    await localDb.goals.update(goal.id, goal as any);
+    return (await localDb.goals.get(goal.id)) as Goal;
+  }
+  const { data, error } = await supabase!.from("goals").update(goal).eq("id", goal.id).select().single();
   if (error) throw error;
   return data;
 }
 
 export async function deleteGoal(goalId: string): Promise<void> {
+  if (isLocal()) { await localDb.goals.delete(goalId); return; }
   const { error } = await supabase!.from("goals").delete().eq("id", goalId);
   if (error) throw error;
 }

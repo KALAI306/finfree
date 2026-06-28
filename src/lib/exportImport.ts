@@ -1,6 +1,9 @@
 import { localDb } from './localdb';
 import { supabase } from './db';
 import { getStorageMode } from './storageMode';
+import { Capacitor } from '@capacitor/core';
+import { Filesystem, Directory, Encoding } from '@capacitor/filesystem';
+import { Share } from '@capacitor/share';
 
 export interface FinFreeBackup {
   version: string;
@@ -63,38 +66,46 @@ export async function exportData(userId: string): Promise<FinFreeBackup> {
   }
 }
 
-export function downloadBackupJSON(backup: FinFreeBackup) {
-  const json = JSON.stringify(backup, null, 2);
-  const blob = new Blob([json], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  const date = new Date().toISOString().split('T')[0];
-  a.href = url;
-  a.download = `finfree-backup-${date}.json`;
-  a.click();
-  URL.revokeObjectURL(url);
+async function saveAndShareFile(filename: string, content: string, mimeType: string) {
+  if (Capacitor.isNativePlatform()) {
+    // Write to cache dir then share (works on Android & iOS)
+    await Filesystem.writeFile({
+      path: filename,
+      data: content,
+      directory: Directory.Cache,
+      encoding: Encoding.UTF8,
+    });
+    const { uri } = await Filesystem.getUri({ path: filename, directory: Directory.Cache });
+    await Share.share({ title: filename, url: uri, dialogTitle: 'Save ' + filename });
+  } else {
+    // Web: use blob download
+    const blob = new Blob([content], { type: mimeType });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
 }
 
-export function downloadTransactionsCSV(transactions: any[]) {
+export async function downloadBackupJSON(backup: FinFreeBackup) {
+  const json = JSON.stringify(backup, null, 2);
+  const date = new Date().toISOString().split('T')[0];
+  await saveAndShareFile(`finfree-backup-${date}.json`, json, 'application/json');
+}
+
+export async function downloadTransactionsCSV(transactions: any[]) {
   if (!transactions.length) return;
   const headers = ['Date', 'Type', 'Category', 'Amount', 'Description', 'Account'];
   const rows = transactions.map(t => [
-    t.date,
-    t.type,
-    t.category,
-    t.amount,
-    t.description || '',
-    t.account_id || '',
+    t.date, t.type, t.category, t.amount, t.description || '', t.account_id || '',
   ]);
   const csv = [headers, ...rows].map(r => r.map(v => `"${v}"`).join(',')).join('\n');
-  const blob = new Blob([csv], { type: 'text/csv' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
   const date = new Date().toISOString().split('T')[0];
-  a.href = url;
-  a.download = `finfree-transactions-${date}.csv`;
-  a.click();
-  URL.revokeObjectURL(url);
+  await saveAndShareFile(`finfree-transactions-${date}.csv`, csv, 'text/csv');
 }
 
 // ─── IMPORT ───────────────────────────────────────────────────────────────────
@@ -125,8 +136,6 @@ export async function importData(
   mode: 'replace' | 'merge'
 ): Promise<void> {
   const storageMode = getStorageMode();
-
-  // Re-stamp all records with current userId
   const stamp = (arr: any[]) => arr.map(r => ({ ...r, user_id: userId }));
 
   if (storageMode === 'local') {
