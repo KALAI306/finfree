@@ -7,7 +7,8 @@ import {
   getInvestments,
   getEmis,
   getGoals,
-  updateProfile as dbUpdateProfile
+  updateProfile as dbUpdateProfile,
+  addTransaction,
 } from "../lib/db";
 import type {
   Profile,
@@ -48,6 +49,11 @@ interface AppContextType {
   refreshData: () => Promise<void>;
   logout: () => Promise<void>;
   updateUserProfile: (updates: Partial<Profile>) => Promise<void>;
+  storageMode: 'local' | 'cloud';
+  lastRefreshed: Date | null;
+  budgetLimits: Record<string, number>;
+  setBudgetLimit: (category: string, amount: number) => void;
+  removeBudgetLimit: (category: string) => void;
   theme: "dark" | "light";
   toggleTheme: () => void;
   themeColor: "gold" | "green" | "blue" | "purple" | "rose";
@@ -79,6 +85,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [loading, setLoading] = useState(true);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [showWelcomeTour, setShowWelcomeTour] = useState(false);
+  const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null);
+  const [storageMode, setStorageModeState] = useState<'local' | 'cloud'>(getStorageMode);
+  const [budgetLimits, setBudgetLimitsState] = useState<Record<string, number>>(() => {
+    try { return JSON.parse(localStorage.getItem('finfree_budget_limits') || '{}'); } catch { return {}; }
+  });
 
   // Theme states
   const [theme, setTheme] = useState<"dark" | "light">("dark");
@@ -196,6 +207,68 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     document.documentElement.setAttribute("data-theme-color", savedColor);
   }, []);
 
+  const autoCreateRecurring = async (userId: string) => {
+    const key = `finfree_recurring_done_${userId}_${new Date().toISOString().slice(0, 7)}`;
+    if (localStorage.getItem(key)) return;
+    try {
+      const mode = getStorageMode();
+      let allTxs: any[];
+      if (mode === 'local') {
+        allTxs = await localDb.transactions.where('user_id').equals(userId).toArray();
+      } else {
+        if (!supabase) return;
+        const { data } = await supabase.from('transactions').select('*').eq('user_id', userId);
+        allTxs = data || [];
+      }
+      const recurring = allTxs.filter((t: any) => t.is_recurring);
+      if (!recurring.length) return;
+
+      const thisMonth = new Date().toISOString().slice(0, 7);
+      const thisMonthTxs = allTxs.filter((t: any) => t.date?.startsWith(thisMonth));
+      let created = 0;
+
+      for (const r of recurring) {
+        const alreadyExists = thisMonthTxs.some(
+          (t: any) => t.category === r.category && t.amount === r.amount && t.is_recurring
+        );
+        if (!alreadyExists) {
+          const today = new Date().toISOString().split('T')[0];
+          await addTransaction({
+            user_id: userId,
+            account_id: r.account_id,
+            type: r.type,
+            amount: r.amount,
+            category: r.category,
+            note: r.note || r.description || '',
+            date: today,
+            is_recurring: true,
+            transfer_to_account_id: r.transfer_to_account_id || null,
+          });
+          created++;
+        }
+      }
+      localStorage.setItem(key, '1');
+      if (created > 0) {
+        showToast(`Auto-created ${created} recurring transaction${created > 1 ? 's' : ''} for this month`, 'info');
+      }
+    } catch (e) {
+      console.warn('Auto-recurring failed:', e);
+    }
+  };
+
+  const setBudgetLimit = (category: string, amount: number) => {
+    const updated = { ...budgetLimits, [category]: amount };
+    setBudgetLimitsState(updated);
+    localStorage.setItem('finfree_budget_limits', JSON.stringify(updated));
+  };
+
+  const removeBudgetLimit = (category: string) => {
+    const updated = { ...budgetLimits };
+    delete updated[category];
+    setBudgetLimitsState(updated);
+    localStorage.setItem('finfree_budget_limits', JSON.stringify(updated));
+  };
+
   const showToast = (message: string, type: ToastType) => {
     const id = Math.random().toString(36).substr(2, 9);
     setToasts((prev) => [...prev, { id, message, type }]);
@@ -255,6 +328,26 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setInvestments(invData);
       setEmis(emiData);
       setGoals(goalData);
+      setLastRefreshed(new Date());
+      setStorageModeState(getStorageMode());
+
+      // Save monthly net worth snapshot to Dexie
+      try {
+        const liquid = accData.reduce((s, a) => s + Number(a.balance), 0);
+        const invested = invData.reduce((s, i) => s + Number(i.current_value), 0);
+        const debt = profData ? Number(profData.family_debt) : 0;
+        const month = new Date().toISOString().slice(0, 7);
+        await localDb.networth_snapshots.put({
+          id: `${uId}_${month}`,
+          user_id: uId,
+          month,
+          net_worth: liquid + invested - debt,
+          liquid_cash: liquid,
+          invested,
+          debt,
+          recorded_at: new Date().toISOString(),
+        });
+      } catch { /* non-critical */ }
 
       evaluateFinancialAlerts(profData, emiData, goalData);
     } catch (err: any) {
@@ -384,7 +477,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             showToast('Your cloud data has been synced locally!', 'success');
           }
         }
-        refreshData(user.id);
+        await refreshData(user.id);
+        // Auto-create recurring transactions for this month if not yet created
+        await autoCreateRecurring(user.id);
       };
       runDataLoad();
       const key = `finfree_welcomed_${user.id}`;
@@ -436,7 +531,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         profileImage,
         updateProfileImage,
         goalBgImages,
-        updateGoalBgImage
+        updateGoalBgImage,
+        storageMode,
+        lastRefreshed,
+        budgetLimits,
+        setBudgetLimit,
+        removeBudgetLimit,
       }}
     >
       {children}

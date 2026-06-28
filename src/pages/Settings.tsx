@@ -17,7 +17,66 @@ import {
   FileJson,
   FileSpreadsheet,
   FolderOpen,
+  PiggyBank,
 } from "lucide-react";
+
+// Budget Limits sub-component
+const ALL_BUDGET_CATS = [
+  "Food 🍕","Fuel ⛽","Rent/PG 🏠","EMI 💳","Healthcare 🏥",
+  "Shopping 🛍️","Recharges 📱","Gold Investment 🥇","Daily Workers 👷","Miscellaneous 🎯",
+];
+
+const BudgetLimitsCard: React.FC<{
+  budgetLimits: Record<string, number>;
+  setBudgetLimit: (cat: string, amt: number) => void;
+  removeBudgetLimit: (cat: string) => void;
+}> = ({ budgetLimits, setBudgetLimit, removeBudgetLimit }) => {
+  const [selectedCat, setSelectedCat] = useState(ALL_BUDGET_CATS[0]);
+  const [limitAmount, setLimitAmount] = useState("");
+
+  const handleAdd = () => {
+    if (!limitAmount || Number(limitAmount) <= 0) return;
+    setBudgetLimit(selectedCat, Number(limitAmount));
+    setLimitAmount("");
+  };
+
+  return (
+    <div className="glass-card rounded-2xl p-6 border border-border space-y-4">
+      <h4 className="text-base font-bold text-foreground mb-2 flex items-center gap-2">
+        <PiggyBank className="w-5 h-5 text-gold-400" /> Monthly Budget Limits
+      </h4>
+      <p className="text-xs text-muted-foreground">Set monthly spending caps per category. You'll get a warning when exceeded.</p>
+      <div className="flex gap-2">
+        <select value={selectedCat} onChange={e => setSelectedCat(e.target.value)}
+          className="flex-1 bg-background border border-border rounded-xl py-2 px-3 text-foreground text-xs focus:outline-none focus:border-primary">
+          {ALL_BUDGET_CATS.map(c => <option key={c} value={c}>{c}</option>)}
+        </select>
+        <input type="number" placeholder="₹ Limit" value={limitAmount}
+          onChange={e => setLimitAmount(e.target.value)}
+          className="w-28 bg-background border border-border rounded-xl py-2 px-3 text-foreground text-xs focus:outline-none focus:border-primary" />
+        <button onClick={handleAdd}
+          className="px-3 py-2 rounded-xl bg-primary text-primary-foreground text-xs font-semibold hover:bg-primary/90 transition-all">
+          Set
+        </button>
+      </div>
+      {Object.keys(budgetLimits).length > 0 && (
+        <div className="space-y-2">
+          {Object.entries(budgetLimits).map(([cat, amt]) => (
+            <div key={cat} className="flex items-center justify-between px-3 py-2 rounded-xl bg-muted/20 border border-border">
+              <span className="text-xs font-medium text-foreground">{cat}</span>
+              <div className="flex items-center gap-3">
+                <span className="text-xs font-mono font-bold text-primary">₹{amt.toLocaleString('en-IN')}</span>
+                <button onClick={() => removeBudgetLimit(cat)} className="text-rose-400 hover:text-rose-300 transition-colors">
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
 import { Modal } from "../components/Modal";
 import type { Account } from "../lib/db";
 import { exportData, downloadBackupJSON, downloadTransactionsCSV, readBackupFile, importData, type FinFreeBackup } from "../lib/exportImport";
@@ -25,7 +84,7 @@ import { getStorageMode, setStorageMode, type StorageMode } from "../lib/storage
 import { migrateCloudToLocal } from "../lib/migration";
 
 export const Settings: React.FC = () => {
-  const { user, profile, accounts, transactions, updateUserProfile, showToast, refreshData, customAccountTypes, addCustomAccountType, profileImage, updateProfileImage } = useApp();
+  const { user, profile, accounts, transactions, updateUserProfile, showToast, refreshData, customAccountTypes, addCustomAccountType, profileImage, updateProfileImage, budgetLimits, setBudgetLimit, removeBudgetLimit } = useApp();
   
   // Profile settings state
   const [profileName, setProfileName] = useState(profile?.name || "Kalai");
@@ -677,6 +736,9 @@ export const Settings: React.FC = () => {
             </div>
           </form>
         </div>
+
+        {/* Budget Limits */}
+        <BudgetLimitsCard budgetLimits={budgetLimits} setBudgetLimit={setBudgetLimit} removeBudgetLimit={removeBudgetLimit} />
 
         {/* Security & Password reset */}
         <div className="glass-card rounded-2xl p-6 border border-border space-y-4">

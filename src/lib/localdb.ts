@@ -76,6 +76,17 @@ export interface LocalGoal {
   created_at: string;
 }
 
+export interface NetWorthSnapshot {
+  id: string;         // "userId_YYYY-MM"
+  user_id: string;
+  month: string;      // "YYYY-MM"
+  net_worth: number;
+  liquid_cash: number;
+  invested: number;
+  debt: number;
+  recorded_at: string;
+}
+
 export class FinFreeDB extends Dexie {
   profiles!: Table<LocalProfile>;
   accounts!: Table<LocalAccount>;
@@ -83,6 +94,7 @@ export class FinFreeDB extends Dexie {
   investments!: Table<LocalInvestment>;
   emis!: Table<LocalEmi>;
   goals!: Table<LocalGoal>;
+  networth_snapshots!: Table<NetWorthSnapshot>;
 
   constructor() {
     super('FinFreeLocalDB');
@@ -93,6 +105,15 @@ export class FinFreeDB extends Dexie {
       investments: 'id, user_id',
       emis: 'id, user_id',
       goals: 'id, user_id',
+    });
+    this.version(2).stores({
+      profiles: 'id',
+      accounts: 'id, user_id',
+      transactions: 'id, user_id, account_id, date, type, category',
+      investments: 'id, user_id',
+      emis: 'id, user_id',
+      goals: 'id, user_id',
+      networth_snapshots: 'id, user_id, month',
     });
   }
 }

@@ -17,6 +17,7 @@ import { AdminPanel } from "./pages/AdminPanel";
 import { ResetPassword } from "./pages/ResetPassword";
 import { StorageSetup } from "./pages/StorageSetup";
 import { ToastContainer } from "./components/Toast";
+import { BiometricLock } from "./components/BiometricLock";
 import { Flame } from "lucide-react";
 import { isFirstLaunch } from "./lib/storageMode";
 import { Capacitor } from "@capacitor/core";
@@ -27,6 +28,7 @@ import { supabase } from "./lib/db";
 const AppContent: React.FC = () => {
   const { user, loading } = useApp();
   const [setupDone, setSetupDone] = useState(() => !isFirstLaunch());
+  const [biometricUnlocked, setBiometricUnlocked] = useState(false);
 
   if (loading) {
     return (
@@ -45,6 +47,11 @@ const AppContent: React.FC = () => {
   // Show storage mode picker on first ever launch
   if (!setupDone) {
     return <StorageSetup onDone={() => setSetupDone(true)} />;
+  }
+
+  // Biometric lock — shown to logged-in users until they authenticate
+  if (user && !biometricUnlocked) {
+    return <BiometricLock onUnlocked={() => setBiometricUnlocked(true)} />;
   }
 
   return (

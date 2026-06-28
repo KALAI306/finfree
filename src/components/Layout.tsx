@@ -50,7 +50,7 @@ const mobileMain  = navItems.slice(0, 4);
 const mobileExtra = navItems.slice(4);
 
 export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { profile, isAdmin, logout, theme, toggleTheme, profileImage, themeColor, setThemeColor, showWelcomeTour, dismissWelcomeTour } = useApp();
+  const { profile, isAdmin, logout, theme, toggleTheme, profileImage, themeColor, setThemeColor, showWelcomeTour, dismissWelcomeTour, storageMode, lastRefreshed } = useApp();
   const location = useLocation();
   const [drawerOpen, setDrawerOpen] = useState(false);
 
@@ -81,10 +81,17 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
 
         {/* Connection status */}
         <div className="px-4 mb-5">
-          <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-emerald-500/8 border border-emerald-500/15 text-[11px] text-emerald-400 font-medium">
-            <Database className="w-3 h-3" />
-            Supabase Live
-          </div>
+          {storageMode === 'cloud' ? (
+            <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-emerald-500/8 border border-emerald-500/15 text-[11px] text-emerald-400 font-medium">
+              <Database className="w-3 h-3" />
+              <span>Cloud · {lastRefreshed ? lastRefreshed.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : 'Syncing…'}</span>
+            </div>
+          ) : (
+            <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-amber-500/8 border border-amber-500/15 text-[11px] text-amber-400 font-medium">
+              <Database className="w-3 h-3" />
+              <span>Local · {lastRefreshed ? lastRefreshed.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : 'Loading…'}</span>
+            </div>
+          )}
         </div>
 
         {/* Nav links */}
@@ -187,9 +194,15 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
             <Flame className="w-4 h-4 text-primary-foreground" strokeWidth={2.5} />
           </div>
           <span className="text-[17px] font-bold tracking-wide text-foreground leading-none">FinFree</span>
-          <span className="px-1.5 py-0.5 rounded text-[8px] font-bold tracking-wide uppercase bg-emerald-500/12 border border-emerald-500/20 text-emerald-400">
-            LIVE
-          </span>
+          {storageMode === 'cloud' ? (
+            <span className="px-1.5 py-0.5 rounded text-[8px] font-bold tracking-wide uppercase bg-emerald-500/12 border border-emerald-500/20 text-emerald-400">
+              LIVE
+            </span>
+          ) : (
+            <span className="px-1.5 py-0.5 rounded text-[8px] font-bold tracking-wide uppercase bg-amber-500/12 border border-amber-500/20 text-amber-400">
+              LOCAL
+            </span>
+          )}
         </div>
 
         <div className="flex items-center gap-2">

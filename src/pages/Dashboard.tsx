@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { useApp } from "../context/AppContext";
 import { formatIndianCurrency, formatIndianNumberOnly } from "../lib/utils";
@@ -20,9 +20,13 @@ import {
   Zap,
   ArrowRightLeft,
   Quote,
+  Cloud,
+  HardDrive,
+  RefreshCw,
 } from "lucide-react";
 import { Modal } from "../components/Modal";
 import { TransactionForm } from "./Transactions.tsx";
+import { localDb, type NetWorthSnapshot } from "../lib/localdb";
 
 const CHART_COLORS: Record<string, string> = {
   gold:   "#C9A13E",
@@ -91,8 +95,17 @@ function getTxIcon(category: string, type: string): string {
 }
 
 export const Dashboard: React.FC = () => {
-  const { profile, accounts, transactions, investments, emis, themeColor, starredAccountIds, refreshData } = useApp();
+  const { user, profile, accounts, transactions, investments, emis, themeColor, starredAccountIds, refreshData, storageMode, lastRefreshed, budgetLimits } = useApp();
   const [isAddTxOpen, setIsAddTxOpen] = useState(false);
+  const [nwHistory, setNwHistory] = useState<NetWorthSnapshot[]>([]);
+
+  useEffect(() => {
+    if (!user?.id) return;
+    localDb.networth_snapshots
+      .where('user_id').equals(user.id)
+      .sortBy('month')
+      .then(snaps => setNwHistory(snaps.slice(-12)));
+  }, [user?.id, lastRefreshed]);
 
   const accentColor = CHART_COLORS[themeColor] || CHART_COLORS.gold;
 
@@ -143,8 +156,42 @@ export const Dashboard: React.FC = () => {
   const recentTxs = [...transactions].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()).slice(0, 6);
   const monthlySavingsRate = monthlySalary > 0 ? ((monthlySalary - monthlyExpense) / monthlySalary) * 100 : 0;
 
+  const [refreshing, setRefreshing] = useState(false);
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    await refreshData();
+    setRefreshing(false);
+  };
+
   return (
     <div className="space-y-6 py-1">
+
+      {/* ── Sync Status Banner ── */}
+      <div className={`flex items-center justify-between px-3 py-2 rounded-xl border text-xs font-medium ${
+        storageMode === 'cloud'
+          ? 'bg-emerald-500/5 border-emerald-500/15 text-emerald-400'
+          : 'bg-amber-500/5 border-amber-500/15 text-amber-400'
+      }`}>
+        <div className="flex items-center gap-2">
+          {storageMode === 'cloud'
+            ? <Cloud className="w-3.5 h-3.5" />
+            : <HardDrive className="w-3.5 h-3.5" />}
+          <span>{storageMode === 'cloud' ? 'Cloud Storage' : 'Local Storage'}</span>
+          {lastRefreshed && (
+            <span className="text-[10px] opacity-60">
+              · Updated {lastRefreshed.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
+            </span>
+          )}
+        </div>
+        <button
+          onClick={handleRefresh}
+          disabled={refreshing}
+          className="p-1 rounded-lg hover:bg-white/10 transition-colors cursor-pointer"
+          aria-label="Refresh data"
+        >
+          <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin' : ''}`} />
+        </button>
+      </div>
 
       {/* ── Header ── */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 animate-fade-in-up">
@@ -302,6 +349,55 @@ export const Dashboard: React.FC = () => {
         </div>
       </div>
 
+      {/* ── Net Worth History ── */}
+      {nwHistory.length >= 2 && (
+        <div className="aurora-card p-5 animate-fade-in-up stagger-2">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <div className="icon-box icon-box-violet w-8 h-8">
+                <TrendingUp className="w-4 h-4" />
+              </div>
+              <span className="label-xs">Net Worth History</span>
+            </div>
+            <span className="text-[10px] text-muted-foreground">{nwHistory.length} months</span>
+          </div>
+          <div className="relative h-20">
+            <svg className="w-full h-full" viewBox={`0 0 ${nwHistory.length * 40} 80`} preserveAspectRatio="none">
+              {(() => {
+                const vals = nwHistory.map(s => s.net_worth);
+                const min = Math.min(...vals);
+                const max = Math.max(...vals);
+                const range = max - min || 1;
+                const pts = vals.map((v, i) => `${i * 40 + 20},${70 - ((v - min) / range) * 60}`).join(' ');
+                const areaBot = `${(vals.length - 1) * 40 + 20},70 20,70`;
+                return (
+                  <>
+                    <defs>
+                      <linearGradient id="nwGrad" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor={accentColor} stopOpacity="0.3" />
+                        <stop offset="100%" stopColor={accentColor} stopOpacity="0.02" />
+                      </linearGradient>
+                    </defs>
+                    <polygon points={`${pts} ${areaBot}`} fill="url(#nwGrad)" />
+                    <polyline points={pts} fill="none" stroke={accentColor} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                    {vals.map((v, i) => (
+                      <circle key={i} cx={i * 40 + 20} cy={70 - ((v - min) / range) * 60} r="3" fill={accentColor} />
+                    ))}
+                  </>
+                );
+              })()}
+            </svg>
+            <div className="absolute bottom-0 left-0 right-0 flex justify-between text-[9px] text-muted-foreground/50 px-1">
+              {nwHistory.map(s => <span key={s.month}>{s.month.slice(5)}</span>)}
+            </div>
+          </div>
+          <div className="flex justify-between mt-3 text-xs">
+            <span className="text-muted-foreground">Lowest: <span className="font-mono text-foreground">{formatIndianCurrency(Math.min(...nwHistory.map(s => s.net_worth)))}</span></span>
+            <span className="text-muted-foreground">Latest: <span className="font-mono font-bold" style={{ color: accentColor }}>{formatIndianCurrency(nwHistory[nwHistory.length - 1]?.net_worth ?? 0)}</span></span>
+          </div>
+        </div>
+      )}
+
       {/* ── Monthly Stats Grid ── */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 animate-fade-in-up stagger-3">
 
@@ -382,6 +478,44 @@ export const Dashboard: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* ── Budget Alerts ── */}
+      {Object.keys(budgetLimits).length > 0 && (() => {
+        const alerts = Object.entries(budgetLimits).map(([cat, limit]) => {
+          const spent = monthTxs.filter(t => t.type === 'expense' && t.category === cat).reduce((s, t) => s + Number(t.amount), 0);
+          const pct = limit > 0 ? (spent / limit) * 100 : 0;
+          return { cat, limit, spent, pct };
+        }).filter(a => a.pct > 0);
+        if (!alerts.length) return null;
+        return (
+          <div className="aurora-card p-5 animate-fade-in-up">
+            <div className="flex items-center gap-2 mb-4">
+              <div className="icon-box icon-box-warning w-8 h-8"><AlertTriangle className="w-4 h-4" /></div>
+              <span className="label-xs">Budget Tracker</span>
+            </div>
+            <div className="space-y-3">
+              {alerts.map(({ cat, limit, spent, pct }) => (
+                <div key={cat}>
+                  <div className="flex justify-between text-xs mb-1">
+                    <span className="text-foreground font-medium">{cat}</span>
+                    <span className={pct >= 100 ? 'text-rose-400 font-bold' : pct >= 80 ? 'text-amber-400' : 'text-muted-foreground'}>
+                      {formatIndianCurrency(spent)} / {formatIndianCurrency(limit)}
+                      {pct >= 100 && ' ⚠ Over!'}
+                    </span>
+                  </div>
+                  <div className="progress-track">
+                    <div className="progress-fill" style={{
+                      width: `${Math.min(100, pct)}%`,
+                      background: pct >= 100 ? '#ef4444' : pct >= 80 ? '#f59e0b' : accentColor,
+                      boxShadow: 'none'
+                    }} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      })()}
 
       {/* ── Savings Rate + Accounts Row ── */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 animate-fade-in-up stagger-4">
