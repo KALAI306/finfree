@@ -485,6 +485,27 @@ export async function adminDeleteUserProfile(userId: string): Promise<void> {
   ]);
 }
 
+// ── MCP Token helpers ─────────────────────────────────────────────────────────
+
+export async function getMcpToken(userId: string): Promise<string | null> {
+  const { data } = await supabase!.from('mcp_tokens').select('token').eq('user_id', userId).single();
+  return data?.token ?? null;
+}
+
+export async function generateMcpToken(userId: string): Promise<string> {
+  const { data, error } = await supabase!
+    .from('mcp_tokens')
+    .upsert({ user_id: userId }, { onConflict: 'user_id', ignoreDuplicates: false })
+    .select('token')
+    .single();
+  if (error) throw error;
+  return data.token;
+}
+
+export async function revokeMcpToken(userId: string): Promise<void> {
+  await supabase!.from('mcp_tokens').delete().eq('user_id', userId);
+}
+
 export async function resetUserDatabase(userId: string): Promise<void> {
   await Promise.all([
     supabase!.from("transactions").delete().eq("user_id", userId),

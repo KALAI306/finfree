@@ -1,7 +1,7 @@
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import { useApp } from "../context/AppContext";
 import { compressImage } from "../lib/utils";
-import { addAccount, deleteAccount, updateAccount, supabase, resetUserDatabase } from "../lib/db";
+import { addAccount, deleteAccount, updateAccount, supabase, resetUserDatabase, getMcpToken, generateMcpToken, revokeMcpToken } from "../lib/db";
 import { Capacitor } from "@capacitor/core";
 import { isPinSet, setPin, clearPin, PinPad } from "../components/BiometricLock";
 import { CURRENCIES } from "../lib/utils";
@@ -23,6 +23,11 @@ import {
   PiggyBank,
   Shield,
   KeyRound,
+  Bot,
+  Copy,
+  RotateCw,
+  Link as LinkIcon,
+  CheckCheck,
 } from "lucide-react";
 
 // Budget Limits sub-component
@@ -163,6 +168,111 @@ const AppPinCard: React.FC = () => {
           <p className="text-xs font-medium text-muted-foreground">Confirm your PIN</p>
           <PinPad verify={false} confirmPin={firstPin} onSuccess={handleConfirmPin} onCancel={() => setStep('enter')} />
         </div>
+      )}
+    </div>
+  );
+};
+
+const MCP_BASE_URL = 'https://jqqreupesjhzseyphxds.supabase.co/functions/v1/finfree-mcp';
+
+const ClaudeConnectCard: React.FC<{ userId: string; isLocal: boolean }> = ({ userId, isLocal }) => {
+  const [token, setToken] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    getMcpToken(userId).then(t => { setToken(t); setLoading(false); });
+  }, [userId]);
+
+  const mcpUrl = token ? `${MCP_BASE_URL}?token=${token}` : '';
+
+  const handleGenerate = async () => {
+    setBusy(true);
+    try {
+      const t = await generateMcpToken(userId);
+      setToken(t);
+    } catch {}
+    setBusy(false);
+  };
+
+  const handleRevoke = async () => {
+    setBusy(true);
+    try {
+      await revokeMcpToken(userId);
+      setToken(null);
+    } catch {}
+    setBusy(false);
+  };
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(mcpUrl);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  return (
+    <div className="glass-card rounded-2xl p-6 border border-border space-y-4">
+      <h4 className="text-base font-bold text-foreground flex items-center gap-2">
+        <Bot className="w-5 h-5 text-gold-400" /> Connect to Claude AI
+      </h4>
+      <p className="text-xs text-muted-foreground">
+        Ask Claude about your finances directly on claude.ai — spending, goals, net worth and more.
+      </p>
+
+      {isLocal && (
+        <div className="px-3 py-2 rounded-xl bg-amber-500/10 border border-amber-500/20 text-xs text-amber-400">
+          Switch to Cloud mode (Settings → Storage) to enable Claude AI connection.
+        </div>
+      )}
+
+      {!isLocal && (
+        <>
+          {loading ? (
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+              <RotateCw className="w-3.5 h-3.5 animate-spin" /> Loading…
+            </div>
+          ) : token ? (
+            <div className="space-y-3">
+              <div className="flex items-center gap-2 p-2.5 rounded-xl bg-muted/20 border border-border">
+                <LinkIcon className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                <span className="text-[10px] font-mono text-muted-foreground truncate flex-1">{mcpUrl}</span>
+                <button onClick={handleCopy} className="shrink-0 text-primary hover:text-primary/80 transition-colors cursor-pointer">
+                  {copied ? <CheckCheck className="w-3.5 h-3.5 text-green-400" /> : <Copy className="w-3.5 h-3.5" />}
+                </button>
+              </div>
+
+              <div className="px-3 py-2.5 rounded-xl bg-primary/5 border border-primary/10 space-y-1.5">
+                <p className="text-[11px] font-semibold text-primary">How to connect:</p>
+                <ol className="text-[11px] text-muted-foreground space-y-1 list-none">
+                  <li>1. Copy the URL above</li>
+                  <li>2. Go to <span className="text-foreground font-medium">claude.ai</span> → Settings</li>
+                  <li>3. Click <span className="text-foreground font-medium">Integrations → Add</span></li>
+                  <li>4. Paste the URL → Save</li>
+                  <li>5. Ask Claude anything about your finances!</li>
+                </ol>
+              </div>
+
+              <div className="flex gap-2">
+                <button onClick={handleCopy} disabled={busy}
+                  className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-primary text-primary-foreground text-xs font-semibold hover:bg-primary/90 transition-all cursor-pointer">
+                  {copied ? <CheckCheck className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                  {copied ? 'Copied!' : 'Copy URL'}
+                </button>
+                <button onClick={handleRevoke} disabled={busy}
+                  className="px-3 py-2 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 text-xs font-semibold transition-all cursor-pointer">
+                  Revoke
+                </button>
+              </div>
+            </div>
+          ) : (
+            <button onClick={handleGenerate} disabled={busy}
+              className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 transition-all cursor-pointer">
+              {busy ? <RotateCw className="w-4 h-4 animate-spin" /> : <Bot className="w-4 h-4" />}
+              {busy ? 'Generating…' : 'Generate My MCP URL'}
+            </button>
+          )}
+        </>
       )}
     </div>
   );
@@ -831,8 +941,11 @@ export const Settings: React.FC = () => {
         {/* Budget Limits */}
         <BudgetLimitsCard budgetLimits={budgetLimits} setBudgetLimit={setBudgetLimit} removeBudgetLimit={removeBudgetLimit} />
 
-        {/* App PIN Lock (web only) */}
+        {/* App PIN Lock */}
         <AppPinCard />
+
+        {/* Connect to Claude AI */}
+        {user && <ClaudeConnectCard userId={user.id} isLocal={storageMode === 'local'} />}
 
         {/* Security & Password reset */}
         <div className="glass-card rounded-2xl p-6 border border-border space-y-4">
