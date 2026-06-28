@@ -2,6 +2,13 @@ import React, { useState } from "react";
 import { supabase, seedUserData } from "../lib/db";
 import { useApp } from "../context/AppContext";
 import { Flame, Mail, Lock, User, Eye, EyeOff, KeyRound } from "lucide-react";
+import { Capacitor } from "@capacitor/core";
+
+// On native (Android/iOS) use custom URL scheme so OAuth redirects back to the app
+const getRedirectUrl = () =>
+  Capacitor.isNativePlatform()
+    ? "finfree://login-callback"
+    : window.location.origin;
 
 /* Google SVG icon */
 const GoogleIcon = () => (
@@ -71,7 +78,7 @@ export const Auth: React.FC = () => {
       const { error } = await supabase.auth.signInWithOAuth({
         provider: "google",
         options: {
-          redirectTo: window.location.origin,
+          redirectTo: getRedirectUrl(),
           queryParams: { access_type: "offline", prompt: "consent" },
         },
       });
