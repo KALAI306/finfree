@@ -48,7 +48,8 @@ export const Investments: React.FC = () => {
   const { investments, user, showToast, refreshData, customAssetTypes, addCustomAssetType } = useApp();
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [editingInvestment, setEditingInvestment] = useState<Investment | null>(null);
-  const [timeRange, setTimeRange] = useState<"1M" | "3M" | "6M" | "1Y">("6M");
+  const [timeRange, setTimeRange] = useState<"1M" | "3M" | "6M" | "1Y">("1M");
+  const [tooltipActive, setTooltipActive] = useState(true);
 
   // Summary math
   const totalInvested = investments.reduce((sum, inv) => sum + Number(inv.invested_amount), 0);
@@ -388,11 +389,14 @@ export const Investments: React.FC = () => {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         
         {/* Growth Line Chart */}
-        <div className="lg:col-span-2 glass-card rounded-2xl p-6 border border-border space-y-4">
+        <div className="lg:col-span-2 glass-card rounded-2xl p-6 border border-border space-y-4" onClick={() => setTooltipActive(false)}>
           <div className="flex justify-between items-center">
             <div className="flex items-center gap-2">
               <LineIcon className="w-5 h-5 text-gold-400" />
-              <h4 className="text-base font-bold text-foreground m-0">Portfolio Growth</h4>
+              <div>
+                <h4 className="text-base font-bold text-foreground m-0">Portfolio Growth</h4>
+                <span className="text-[10px] text-muted-foreground">Simulated projection based on current values</span>
+              </div>
             </div>
             
             {/* Time Selector */}
@@ -418,7 +422,7 @@ export const Investments: React.FC = () => {
               </div>
             ) : (
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={growthData}>
+                <AreaChart data={growthData} onMouseLeave={() => setTooltipActive(false)} onMouseEnter={() => setTooltipActive(true)}>
                   <defs>
                     <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
                       <stop offset="5%" stopColor="#C9A13E" stopOpacity={0.4}/>
@@ -427,17 +431,14 @@ export const Investments: React.FC = () => {
                   </defs>
                   <CartesianGrid strokeDasharray="3 3" stroke="rgba(120,120,120,0.07)" />
                   <XAxis dataKey="name" stroke="#6b7280" fontSize={11} tickLine={false} />
-                  <YAxis 
-                    stroke="#6b7280" 
-                    fontSize={11} 
-                    tickLine={false} 
-                    tickFormatter={(val) => `₹${formatIndianNumberOnly(val)}`}
-                  />
-                  <Tooltip 
-                    contentStyle={{ backgroundColor: "var(--card)", borderColor: "var(--border)", borderRadius: "12px", color: "var(--foreground)" }}
-                    labelClassName="text-muted-foreground text-xs"
-                    formatter={(value: any) => [formatIndianCurrency(value), "Portfolio Value"]}
-                  />
+                  <YAxis stroke="#6b7280" fontSize={11} tickLine={false} tickFormatter={(val) => `₹${formatIndianNumberOnly(val)}`} />
+                  {tooltipActive && (
+                    <Tooltip
+                      contentStyle={{ backgroundColor: "var(--card)", borderColor: "var(--border)", borderRadius: "12px", color: "var(--foreground)" }}
+                      labelClassName="text-muted-foreground text-xs"
+                      formatter={(value: any) => [formatIndianCurrency(value), "Portfolio Value"]}
+                    />
+                  )}
                   <Area type="monotone" dataKey="value" stroke="#C9A13E" strokeWidth={2.5} fillOpacity={1} fill="url(#colorValue)" />
                 </AreaChart>
               </ResponsiveContainer>

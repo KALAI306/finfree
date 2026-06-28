@@ -13,15 +13,50 @@ const GoogleIcon = () => (
   </svg>
 );
 
+type AuthMode = "login" | "signup" | "forgot";
+
+const TermsModal: React.FC<{ type: "terms" | "privacy"; onClose: () => void }> = ({ type, onClose }) => (
+  <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={onClose}>
+    <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" />
+    <div className="relative w-full max-w-md hero-card p-6 rounded-2xl max-h-[80vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+      <h2 className="text-lg font-bold mb-4">{type === "terms" ? "Terms of Service" : "Privacy Policy"}</h2>
+      {type === "terms" ? (
+        <div className="text-sm text-muted-foreground space-y-3">
+          <p><strong className="text-foreground">1. Use of Service</strong> — FinFree is a personal finance tracker for individual use. You are responsible for the accuracy of your financial data.</p>
+          <p><strong className="text-foreground">2. Data Storage</strong> — Your data is stored securely on Supabase. We do not sell or share your financial data with third parties.</p>
+          <p><strong className="text-foreground">3. No Financial Advice</strong> — FinFree provides tracking tools only. Nothing in this app constitutes professional financial advice.</p>
+          <p><strong className="text-foreground">4. Account Security</strong> — You are responsible for keeping your account credentials secure.</p>
+          <p><strong className="text-foreground">5. Changes</strong> — We may update these terms. Continued use of the app constitutes acceptance.</p>
+        </div>
+      ) : (
+        <div className="text-sm text-muted-foreground space-y-3">
+          <p><strong className="text-foreground">Data We Collect</strong> — Email address, financial data you enter (transactions, goals, investments, EMIs), and profile information.</p>
+          <p><strong className="text-foreground">How We Use It</strong> — Solely to provide the FinFree service to you. Your data is never sold or shared.</p>
+          <p><strong className="text-foreground">Storage</strong> — Data is stored on Supabase with row-level security, meaning only you can access your data.</p>
+          <p><strong className="text-foreground">Cookies</strong> — We use only essential cookies for authentication purposes.</p>
+          <p><strong className="text-foreground">Your Rights</strong> — You can delete your account and all associated data at any time from Settings.</p>
+        </div>
+      )}
+      <button onClick={onClose} className="mt-5 w-full btn-primary py-2.5 cursor-pointer">Close</button>
+    </div>
+  </div>
+);
+
 export const Auth: React.FC = () => {
   const { showToast } = useApp();
-  const [isSignUp, setIsSignUp] = useState(false);
+  const [mode, setMode] = useState<AuthMode>("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [modal, setModal] = useState<"terms" | "privacy" | null>(null);
+  const [resendLoading, setResendLoading] = useState(false);
+  const [showResend, setShowResend] = useState(false);
+
+  const isSignUp = mode === "signup";
+  const isForgot = mode === "forgot";
 
   /* ── Google OAuth ── */
   const handleGoogleLogin = async () => {
@@ -49,6 +84,40 @@ export const Auth: React.FC = () => {
     }
   };
 
+  /* ── Forgot Password ── */
+  const handleForgotPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email) { showToast("Enter your email address", "warning"); return; }
+    if (!supabase) return;
+    setLoading(true);
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: `${window.location.origin}/reset-password`,
+      });
+      if (error) throw error;
+      showToast("Password reset link sent! Check your email.", "success");
+      setMode("login");
+    } catch (error: any) {
+      showToast(error.message || "Failed to send reset email", "error");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  /* ── Resend confirmation ── */
+  const handleResend = async () => {
+    if (!supabase || !email) return;
+    setResendLoading(true);
+    try {
+      await supabase.auth.resend({ type: "signup", email });
+      showToast("Confirmation email resent!", "success");
+    } catch {
+      showToast("Failed to resend", "error");
+    } finally {
+      setResendLoading(false);
+    }
+  };
+
   /* ── Email / Password ── */
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -61,16 +130,19 @@ export const Auth: React.FC = () => {
       return;
     }
     setLoading(true);
+    setShowResend(false);
     try {
       if (isSignUp) {
-        const { data, error } = await supabase.auth.signUp({ email, password });
+        const { data, error } = await supabase.auth.signUp({ email, password,
+          options: { data: { full_name: name } }
+        });
         if (error) throw error;
-        if (data.user) {
-          showToast("Creating your financial space…", "info");
-          await seedUserData(data.user.id);
-          showToast("Account created successfully!", "success");
+        if (data.session) {
+          // Email confirmation disabled — user is logged in immediately
+          showToast("Account created! Welcome to FinFree.", "success");
         } else {
-          showToast("Check your email to confirm registration.", "info");
+          showToast("Check your email to confirm your account.", "info");
+          setMode("login");
         }
       } else {
         const { error } = await supabase.auth.signInWithPassword({ email, password });
@@ -79,7 +151,12 @@ export const Auth: React.FC = () => {
       }
     } catch (error: any) {
       console.error("Auth error:", error);
-      showToast(error.message || "Authentication failed", "error");
+      if (error.message?.toLowerCase().includes("email not confirmed")) {
+        showToast("Please confirm your email first.", "warning");
+        setShowResend(true);
+      } else {
+        showToast(error.message || "Authentication failed", "error");
+      }
     } finally {
       setLoading(false);
     }
@@ -122,50 +199,72 @@ export const Auth: React.FC = () => {
           </div>
 
           {/* Tab: Log In / Sign Up */}
-          <div className="flex bg-white/[0.04] border border-white/[0.07] rounded-xl p-1 mb-6">
-            {(["Log In", "Sign Up"] as const).map((tab) => {
-              const active = tab === "Sign Up" ? isSignUp : !isSignUp;
-              return (
+          {!isForgot && (
+            <div className="flex bg-white/[0.04] border border-white/[0.07] rounded-xl p-1 mb-6">
+              {(["login", "signup"] as const).map((m) => (
                 <button
-                  key={tab}
+                  key={m}
                   type="button"
-                  onClick={() => setIsSignUp(tab === "Sign Up")}
+                  onClick={() => { setMode(m); setShowResend(false); }}
                   className={`flex-1 py-2 text-sm font-semibold rounded-lg transition-all cursor-pointer ${
-                    active
-                      ? "bg-primary text-primary-foreground shadow-sm"
-                      : "text-muted-foreground hover:text-foreground"
+                    mode === m ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
                   }`}
                 >
-                  {tab}
+                  {m === "login" ? "Log In" : "Sign Up"}
                 </button>
-              );
-            })}
-          </div>
+              ))}
+            </div>
+          )}
 
-          {/* Google Button */}
-          <button
-            type="button"
-            onClick={handleGoogleLogin}
-            disabled={googleLoading}
-            className="w-full flex items-center justify-center gap-3 py-3 px-4 rounded-xl border border-white/[0.1] bg-white/[0.04] hover:bg-white/[0.08] text-foreground font-semibold text-sm transition-all cursor-pointer disabled:opacity-60 mb-5"
-            style={{ backdropFilter: "blur(12px)" }}
-          >
-            {googleLoading ? (
-              <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
-            ) : (
-              <GoogleIcon />
-            )}
-            {googleLoading ? "Redirecting to Google…" : "Continue with Google"}
-          </button>
+          {/* Forgot Password heading */}
+          {isForgot && (
+            <div className="mb-6">
+              <h2 className="text-xl font-bold text-foreground">Reset Password</h2>
+              <p className="text-sm text-muted-foreground mt-1">Enter your email and we'll send a reset link.</p>
+            </div>
+          )}
 
-          {/* Divider */}
-          <div className="flex items-center gap-3 mb-5">
-            <div className="flex-1 h-px bg-white/[0.07]" />
-            <span className="text-[10px] text-muted-foreground uppercase tracking-widest font-semibold">or</span>
-            <div className="flex-1 h-px bg-white/[0.07]" />
-          </div>
+          {/* Google Button — hidden on forgot password */}
+          {!isForgot && (
+            <>
+              <button
+                type="button"
+                onClick={handleGoogleLogin}
+                disabled={googleLoading}
+                className="w-full flex items-center justify-center gap-3 py-3 px-4 rounded-xl border border-white/[0.1] bg-white/[0.04] hover:bg-white/[0.08] text-foreground font-semibold text-sm transition-all cursor-pointer disabled:opacity-60 mb-5"
+                style={{ backdropFilter: "blur(12px)" }}
+              >
+                {googleLoading ? <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" /> : <GoogleIcon />}
+                {googleLoading ? "Redirecting to Google…" : "Continue with Google"}
+              </button>
+              <div className="flex items-center gap-3 mb-5">
+                <div className="flex-1 h-px bg-white/[0.07]" />
+                <span className="text-[10px] text-muted-foreground uppercase tracking-widest font-semibold">or</span>
+                <div className="flex-1 h-px bg-white/[0.07]" />
+              </div>
+            </>
+          )}
 
-          {/* Email / Password form */}
+          {/* Forgot Password form */}
+          {isForgot ? (
+            <form onSubmit={handleForgotPassword} className="space-y-4">
+              <div className="space-y-1.5">
+                <label className="label-xs block">Email Address</label>
+                <div className="relative">
+                  <Mail className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                  <input type="email" placeholder="kalai@example.com" value={email} onChange={e => setEmail(e.target.value)}
+                    className="w-full bg-white/[0.04] border border-white/[0.08] rounded-xl py-3 pl-10 pr-4 text-foreground text-sm focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 transition-all placeholder:text-muted-foreground/50" />
+                </div>
+              </div>
+              <button type="submit" disabled={loading} className="w-full btn-primary py-3 cursor-pointer disabled:opacity-60">
+                {loading ? <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" /> : <Mail className="w-4 h-4" />}
+                {loading ? "Sending…" : "Send Reset Link"}
+              </button>
+              <button type="button" onClick={() => setMode("login")} className="w-full text-sm text-muted-foreground hover:text-foreground transition-colors cursor-pointer py-1">
+                ← Back to Sign In
+              </button>
+            </form>
+          ) : (
           <form onSubmit={handleAuth} className="space-y-4">
             {isSignUp && (
               <div className="space-y-1.5">
@@ -231,14 +330,33 @@ export const Auth: React.FC = () => {
               )}
               {loading ? "Please wait…" : isSignUp ? "Create Account" : "Sign In"}
             </button>
+
+            {/* Forgot password link — only on login */}
+            {!isSignUp && (
+              <button type="button" onClick={() => { setMode("forgot"); setShowResend(false); }}
+                className="w-full text-center text-xs text-muted-foreground hover:text-primary transition-colors cursor-pointer pt-1">
+                Forgot your password?
+              </button>
+            )}
+
+            {/* Resend confirmation */}
+            {showResend && (
+              <button type="button" onClick={handleResend} disabled={resendLoading}
+                className="w-full text-center text-xs text-primary hover:underline cursor-pointer pt-1 disabled:opacity-60">
+                {resendLoading ? "Sending…" : "Resend confirmation email"}
+              </button>
+            )}
           </form>
+          )} {/* end isForgot conditional */}
 
           <p className="text-center text-[11px] text-muted-foreground mt-5 leading-relaxed">
             By continuing, you agree to our{" "}
-            <span className="text-primary cursor-pointer hover:underline">Terms</span>
+            <span className="text-primary cursor-pointer hover:underline" onClick={() => setModal("terms")}>Terms</span>
             {" & "}
-            <span className="text-primary cursor-pointer hover:underline">Privacy Policy</span>
+            <span className="text-primary cursor-pointer hover:underline" onClick={() => setModal("privacy")}>Privacy Policy</span>
           </p>
+
+          {modal && <TermsModal type={modal} onClose={() => setModal(null)} />}
         </div>
 
         {!supabase && (

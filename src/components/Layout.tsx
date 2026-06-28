@@ -357,6 +357,25 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
               )}
             </div>
 
+            {/* Theme color picker */}
+            <div className="px-1 py-2.5 rounded-xl border border-border/50 bg-white/[0.02] mb-3">
+              <div className="flex items-center gap-1.5 mb-2 px-1">
+                <Palette className="w-3 h-3 text-muted-foreground" />
+                <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Accent Color</span>
+              </div>
+              <div className="flex items-center gap-3 px-1">
+                {THEME_COLORS.map(({ id, label, cls }) => (
+                  <button
+                    key={id}
+                    onClick={() => setThemeColor(id)}
+                    className={`theme-swatch ${cls} ${themeColor === id ? "active" : ""}`}
+                    aria-label={`${label} theme`}
+                    title={label}
+                  />
+                ))}
+              </div>
+            </div>
+
             <div className="flex gap-3">
               <button
                 onClick={toggleTheme}
