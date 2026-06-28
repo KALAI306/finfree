@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AppProvider, useApp } from "./context/AppContext";
 import { Layout } from "./components/Layout";
@@ -19,6 +19,9 @@ import { StorageSetup } from "./pages/StorageSetup";
 import { ToastContainer } from "./components/Toast";
 import { Flame } from "lucide-react";
 import { isFirstLaunch } from "./lib/storageMode";
+import { Capacitor } from "@capacitor/core";
+import { App as CapApp } from "@capacitor/app";
+import { supabase } from "./lib/db";
 
 const AppContent: React.FC = () => {
   const { user, loading } = useApp();
@@ -76,6 +79,34 @@ const AppContent: React.FC = () => {
 };
 
 function App() {
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform() || !supabase) return;
+
+    // Listen for deep link when app is opened via finfree://login-callback
+    CapApp.addListener("appUrlOpen", async ({ url }) => {
+      if (url.startsWith("finfree://login-callback")) {
+        // Convert custom scheme URL to something supabase can parse
+        // Supabase puts tokens in the hash fragment: finfree://login-callback#access_token=...
+        const hashOrQuery = url.includes("#") ? url.split("#")[1] : url.split("?")[1];
+        if (hashOrQuery) {
+          const params = new URLSearchParams(hashOrQuery);
+          const accessToken = params.get("access_token");
+          const refreshToken = params.get("refresh_token");
+          if (accessToken && refreshToken) {
+            await supabase.auth.setSession({ access_token: accessToken, refresh_token: refreshToken });
+          }
+          // PKCE flow: exchange code
+          const code = params.get("code");
+          if (code) {
+            await supabase.auth.exchangeCodeForSession(code);
+          }
+        }
+      }
+    });
+
+    return () => { CapApp.removeAllListeners(); };
+  }, []);
+
   return (
     <AppProvider>
       <BrowserRouter>
