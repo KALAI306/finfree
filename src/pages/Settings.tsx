@@ -2,19 +2,26 @@ import React, { useState, useRef } from "react";
 import { useApp } from "../context/AppContext";
 import { formatIndianCurrency, compressImage } from "../lib/utils";
 import { addAccount, deleteAccount, updateAccount, supabase, resetUserDatabase } from "../lib/db";
-import { 
-  User, 
-  Wallet, 
-  Lock, 
+import {
+  User,
+  Wallet,
+  Lock,
   Download,
   Plus,
   Trash2,
   Edit2,
   Settings as SettingsIcon,
-  Upload
+  Upload,
+  Smartphone,
+  Cloud,
+  FileJson,
+  FileSpreadsheet,
+  FolderOpen,
 } from "lucide-react";
 import { Modal } from "../components/Modal";
 import type { Account } from "../lib/db";
+import { exportData, downloadBackupJSON, downloadTransactionsCSV, readBackupFile, importData, type FinFreeBackup } from "../lib/exportImport";
+import { getStorageMode, setStorageMode, type StorageMode } from "../lib/storageMode";
 
 export const Settings: React.FC = () => {
   const { user, profile, accounts, transactions, updateUserProfile, showToast, refreshData, customAccountTypes, addCustomAccountType, profileImage, updateProfileImage } = useApp();
@@ -30,6 +37,74 @@ export const Settings: React.FC = () => {
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [resettingDb, setResettingDb] = useState(false);
   const avatarInputRef = useRef<HTMLInputElement>(null);
+
+  // Storage mode & export/import
+  const [storageMode, setStorageModeState] = useState<StorageMode>(getStorageMode);
+  const [exporting, setExporting] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [importPreview, setImportPreview] = useState<FinFreeBackup | null>(null);
+  const importFileRef = useRef<HTMLInputElement>(null);
+
+  const handleStorageModeChange = (mode: StorageMode) => {
+    setStorageMode(mode);
+    setStorageModeState(mode);
+    showToast(`Switched to ${mode === 'local' ? 'Local' : 'Cloud'} storage`, 'success');
+  };
+
+  const handleExportJSON = async () => {
+    if (!user) return;
+    setExporting(true);
+    try {
+      const backup = await exportData(user.id);
+      downloadBackupJSON(backup);
+      showToast('Backup downloaded!', 'success');
+    } catch {
+      showToast('Export failed', 'error');
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const handleExportCSVNew = async () => {
+    if (!user) return;
+    setExporting(true);
+    try {
+      const backup = await exportData(user.id);
+      downloadTransactionsCSV(backup.transactions);
+      showToast('CSV downloaded!', 'success');
+    } catch {
+      showToast('Export failed', 'error');
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const handleImportPick = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const backup = await readBackupFile(file);
+      setImportPreview(backup);
+    } catch (err: any) {
+      showToast(err.message || 'Invalid backup file', 'error');
+    }
+    e.target.value = '';
+  };
+
+  const handleImportConfirm = async (mode: 'replace' | 'merge') => {
+    if (!importPreview || !user) return;
+    setImporting(true);
+    try {
+      await importData(importPreview, user.id, mode);
+      showToast(`Data ${mode === 'replace' ? 'replaced' : 'merged'} successfully!`, 'success');
+      setImportPreview(null);
+      refreshData();
+    } catch {
+      showToast('Import failed', 'error');
+    } finally {
+      setImporting(false);
+    }
+  };
 
   const handleResetDatabase = async () => {
     if (!window.confirm("WARNING: Are you absolutely sure you want to delete ALL your live financial data (accounts, transactions, EMIs, investments, and goals)? This action is permanent and cannot be undone.")) {
@@ -618,26 +693,119 @@ export const Settings: React.FC = () => {
           </form>
         </div>
 
-        {/* Export Data & Backend Controller */}
-        <div className="glass-card rounded-2xl p-6 border border-border space-y-4 flex flex-col justify-between">
-          <div>
-            <h4 className="text-base font-bold text-foreground mb-2 flex items-center gap-2">
-              <Download className="w-5 h-5 text-gold-400" /> Data Exporters
-            </h4>
-            <p className="text-xs text-muted-foreground leading-relaxed">
-              Download your complete transaction records as a standard CSV spreadsheet format. This allows you to backup, audit, or upload statements elsewhere.
-            </p>
-          </div>
-
-          <div className="pt-4 border-t border-border flex justify-end">
+        {/* Storage Mode */}
+        <div className="glass-card rounded-2xl p-6 border border-border space-y-4">
+          <h4 className="text-base font-bold text-foreground flex items-center gap-2">
+            <Smartphone className="w-5 h-5 text-primary" /> Storage Mode
+          </h4>
+          <p className="text-xs text-muted-foreground">Choose where your financial data is stored.</p>
+          <div className="grid grid-cols-2 gap-3">
             <button
-              onClick={handleExportCSV}
-              className="bg-gold-500 hover:bg-gold-600 text-white font-semibold py-2.5 px-4 rounded-xl text-xs flex items-center justify-center gap-1.5 transition-all shadow"
+              onClick={() => handleStorageModeChange('local')}
+              className={`p-4 rounded-xl border-2 text-left transition-all ${storageMode === 'local' ? 'border-primary bg-primary/10' : 'border-border/50 bg-white/[0.02] hover:border-border'}`}
             >
-              <Download className="w-4 h-4" />
-              Export Transactions (.CSV)
+              <Smartphone className={`w-5 h-5 mb-2 ${storageMode === 'local' ? 'text-primary' : 'text-muted-foreground'}`} />
+              <p className={`text-xs font-semibold ${storageMode === 'local' ? 'text-primary' : 'text-foreground'}`}>Local Only</p>
+              <p className="text-[10px] text-muted-foreground mt-0.5">On-device · Offline</p>
+            </button>
+            <button
+              onClick={() => handleStorageModeChange('cloud')}
+              className={`p-4 rounded-xl border-2 text-left transition-all ${storageMode === 'cloud' ? 'border-primary bg-primary/10' : 'border-border/50 bg-white/[0.02] hover:border-border'}`}
+            >
+              <Cloud className={`w-5 h-5 mb-2 ${storageMode === 'cloud' ? 'text-primary' : 'text-muted-foreground'}`} />
+              <p className={`text-xs font-semibold ${storageMode === 'cloud' ? 'text-primary' : 'text-foreground'}`}>Cloud Sync</p>
+              <p className="text-[10px] text-muted-foreground mt-0.5">Supabase · Multi-device</p>
             </button>
           </div>
+        </div>
+
+        {/* Export & Import */}
+        <div className="glass-card rounded-2xl p-6 border border-border space-y-5">
+          <h4 className="text-base font-bold text-foreground flex items-center gap-2">
+            <Download className="w-5 h-5 text-primary" /> Export & Import
+          </h4>
+
+          {/* Export */}
+          <div>
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">Export</p>
+            <div className="flex flex-wrap gap-3">
+              <button
+                onClick={handleExportJSON}
+                disabled={exporting}
+                className="flex items-center gap-2 bg-primary/10 hover:bg-primary/20 text-primary border border-primary/30 font-semibold py-2.5 px-4 rounded-xl text-xs transition-all disabled:opacity-50 cursor-pointer"
+              >
+                <FileJson className="w-4 h-4" />
+                Full Backup (.JSON)
+              </button>
+              <button
+                onClick={handleExportCSVNew}
+                disabled={exporting}
+                className="flex items-center gap-2 bg-white/[0.04] hover:bg-white/[0.08] text-foreground border border-border font-semibold py-2.5 px-4 rounded-xl text-xs transition-all disabled:opacity-50 cursor-pointer"
+              >
+                <FileSpreadsheet className="w-4 h-4" />
+                Transactions (.CSV)
+              </button>
+            </div>
+            <p className="text-[11px] text-muted-foreground mt-2">JSON backup includes all data and can be restored. CSV is for spreadsheet use only.</p>
+          </div>
+
+          {/* Import */}
+          <div className="border-t border-border/50 pt-4">
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">Import</p>
+            <input ref={importFileRef} type="file" accept=".json" className="hidden" onChange={handleImportPick} />
+            <button
+              onClick={() => importFileRef.current?.click()}
+              className="flex items-center gap-2 bg-white/[0.04] hover:bg-white/[0.08] text-foreground border border-border font-semibold py-2.5 px-4 rounded-xl text-xs transition-all cursor-pointer"
+            >
+              <FolderOpen className="w-4 h-4" />
+              Choose Backup File (.JSON)
+            </button>
+            <p className="text-[11px] text-muted-foreground mt-2">Only FinFree .json backup files are supported.</p>
+          </div>
+
+          {/* Import Preview Modal */}
+          {importPreview && (
+            <div className="border border-primary/30 bg-primary/5 rounded-xl p-4 space-y-3">
+              <p className="text-xs font-semibold text-foreground">Backup found:</p>
+              <div className="grid grid-cols-3 gap-2 text-center">
+                {[
+                  { label: 'Transactions', count: importPreview.transactions.length },
+                  { label: 'Accounts', count: importPreview.accounts.length },
+                  { label: 'Investments', count: importPreview.investments.length },
+                  { label: 'EMIs', count: importPreview.emis.length },
+                  { label: 'Goals', count: importPreview.goals.length },
+                ].map(({ label, count }) => (
+                  <div key={label} className="bg-white/[0.04] rounded-lg py-2">
+                    <p className="text-sm font-bold text-foreground">{count}</p>
+                    <p className="text-[10px] text-muted-foreground">{label}</p>
+                  </div>
+                ))}
+              </div>
+              <p className="text-[11px] text-muted-foreground">Exported: {new Date(importPreview.exported_at).toLocaleDateString()}</p>
+              <div className="flex gap-2 pt-1">
+                <button
+                  onClick={() => handleImportConfirm('merge')}
+                  disabled={importing}
+                  className="flex-1 bg-primary/10 hover:bg-primary/20 text-primary border border-primary/30 font-semibold py-2 rounded-xl text-xs transition-all disabled:opacity-50 cursor-pointer"
+                >
+                  {importing ? 'Importing...' : 'Merge with existing'}
+                </button>
+                <button
+                  onClick={() => handleImportConfirm('replace')}
+                  disabled={importing}
+                  className="flex-1 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 font-semibold py-2 rounded-xl text-xs transition-all disabled:opacity-50 cursor-pointer"
+                >
+                  Replace all
+                </button>
+                <button
+                  onClick={() => setImportPreview(null)}
+                  className="px-3 bg-white/[0.04] hover:bg-white/[0.08] text-muted-foreground border border-border rounded-xl text-xs cursor-pointer"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Danger Zone */}

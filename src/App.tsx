@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AppProvider, useApp } from "./context/AppContext";
 import { Layout } from "./components/Layout";
@@ -15,11 +15,14 @@ import { Settings } from "./pages/Settings";
 import { Accounts } from "./pages/Accounts";
 import { AdminPanel } from "./pages/AdminPanel";
 import { ResetPassword } from "./pages/ResetPassword";
+import { StorageSetup } from "./pages/StorageSetup";
 import { ToastContainer } from "./components/Toast";
 import { Flame } from "lucide-react";
+import { isFirstLaunch } from "./lib/storageMode";
 
 const AppContent: React.FC = () => {
   const { user, loading } = useApp();
+  const [setupDone, setSetupDone] = useState(() => !isFirstLaunch());
 
   if (loading) {
     return (
@@ -33,6 +36,11 @@ const AppContent: React.FC = () => {
         </p>
       </div>
     );
+  }
+
+  // Show storage mode picker on first ever launch
+  if (!setupDone) {
+    return <StorageSetup onDone={() => setSetupDone(true)} />;
   }
 
   return (

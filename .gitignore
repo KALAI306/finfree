@@ -27,3 +27,12 @@ dist-ssr
 .env
 .env.local
 .env.*.local
+
+# Android build outputs (keep source, ignore builds)
+android/.gradle/
+android/app/build/
+android/build/
+android/local.properties
+*.apk
+*.aab
+*.keystore
