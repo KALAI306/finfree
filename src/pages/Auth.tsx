@@ -3,12 +3,7 @@ import { supabase, seedUserData } from "../lib/db";
 import { useApp } from "../context/AppContext";
 import { Flame, Mail, Lock, User, Eye, EyeOff, KeyRound } from "lucide-react";
 import { Capacitor } from "@capacitor/core";
-
-// On native (Android/iOS) use custom URL scheme so OAuth redirects back to the app
-const getRedirectUrl = () =>
-  Capacitor.isNativePlatform()
-    ? "finfree://login-callback"
-    : window.location.origin;
+import { Browser } from "@capacitor/browser";
 
 /* Google SVG icon */
 const GoogleIcon = () => (
@@ -72,18 +67,33 @@ export const Auth: React.FC = () => {
       return;
     }
     setGoogleLoading(true);
-    // Clear any stale demo mode so the OAuth callback always lands in Supabase mode
     localStorage.removeItem("finfree_mode");
     try {
-      const { error } = await supabase.auth.signInWithOAuth({
-        provider: "google",
-        options: {
-          redirectTo: getRedirectUrl(),
-          queryParams: { access_type: "offline", prompt: "consent" },
-        },
-      });
-      if (error) throw error;
-      // Redirect happens automatically — no need to set state
+      if (Capacitor.isNativePlatform()) {
+        // Native: get the OAuth URL without auto-opening, then use Capacitor Browser
+        const { data, error } = await supabase.auth.signInWithOAuth({
+          provider: "google",
+          options: {
+            redirectTo: "finfree://login-callback",
+            skipBrowserRedirect: true,
+            queryParams: { access_type: "offline", prompt: "consent" },
+          },
+        });
+        if (error) throw error;
+        if (data?.url) {
+          await Browser.open({ url: data.url, windowName: "_self" });
+        }
+      } else {
+        // Web: normal redirect
+        const { error } = await supabase.auth.signInWithOAuth({
+          provider: "google",
+          options: {
+            redirectTo: window.location.origin,
+            queryParams: { access_type: "offline", prompt: "consent" },
+          },
+        });
+        if (error) throw error;
+      }
     } catch (error: any) {
       console.error("Google auth error:", error);
       showToast(error.message || "Google sign-in failed", "error");

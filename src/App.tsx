@@ -21,6 +21,7 @@ import { Flame } from "lucide-react";
 import { isFirstLaunch } from "./lib/storageMode";
 import { Capacitor } from "@capacitor/core";
 import { App as CapApp } from "@capacitor/app";
+import { Browser } from "@capacitor/browser";
 import { supabase } from "./lib/db";
 
 const AppContent: React.FC = () => {
@@ -85,8 +86,9 @@ function App() {
     // Listen for deep link when app is opened via finfree://login-callback
     CapApp.addListener("appUrlOpen", async ({ url }) => {
       if (url.startsWith("finfree://login-callback")) {
-        // Convert custom scheme URL to something supabase can parse
-        // Supabase puts tokens in the hash fragment: finfree://login-callback#access_token=...
+        // Close the Capacitor browser tab first
+        await Browser.close();
+
         const hashOrQuery = url.includes("#") ? url.split("#")[1] : url.split("?")[1];
         if (hashOrQuery) {
           const params = new URLSearchParams(hashOrQuery);
