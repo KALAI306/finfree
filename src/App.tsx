@@ -14,6 +14,7 @@ import { Reports } from "./pages/Reports";
 import { Settings } from "./pages/Settings";
 import { Accounts } from "./pages/Accounts";
 import { AdminPanel } from "./pages/AdminPanel";
+import { ResetPassword } from "./pages/ResetPassword";
 import { ToastContainer } from "./components/Toast";
 import { Flame } from "lucide-react";
 
@@ -34,42 +35,45 @@ const AppContent: React.FC = () => {
     );
   }
 
-  if (!user) {
-    return (
-      <>
-        <Auth />
-        <ToastContainer />
-      </>
-    );
-  }
-
   return (
-    <BrowserRouter>
-      <Layout>
-        <Routes>
-          <Route path="/" element={<Dashboard />} />
-          <Route path="/accounts" element={<Accounts />} />
-          <Route path="/transactions" element={<Transactions />} />
-          <Route path="/investments" element={<Investments />} />
-          <Route path="/emi" element={<EmiManager />} />
-          <Route path="/freedom" element={<FreedomCalculator />} />
-          <Route path="/goals" element={<Goals />} />
-          <Route path="/rules" element={<RulesDashboard />} />
-          <Route path="/reports" element={<Reports />} />
-          <Route path="/settings" element={<Settings />} />
-          <Route path="/admin" element={<AdminPanel />} />
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
-      </Layout>
-      <ToastContainer />
-    </BrowserRouter>
+    <Routes>
+      {/* Public route — accessible without login */}
+      <Route path="/reset-password" element={<><ResetPassword /><ToastContainer /></>} />
+
+      {/* Auth-gated routes */}
+      {!user ? (
+        <Route path="*" element={<><Auth /><ToastContainer /></>} />
+      ) : (
+        <Route path="/*" element={
+          <Layout>
+            <Routes>
+              <Route path="/" element={<Dashboard />} />
+              <Route path="/accounts" element={<Accounts />} />
+              <Route path="/transactions" element={<Transactions />} />
+              <Route path="/investments" element={<Investments />} />
+              <Route path="/emi" element={<EmiManager />} />
+              <Route path="/freedom" element={<FreedomCalculator />} />
+              <Route path="/goals" element={<Goals />} />
+              <Route path="/rules" element={<RulesDashboard />} />
+              <Route path="/reports" element={<Reports />} />
+              <Route path="/settings" element={<Settings />} />
+              <Route path="/admin" element={<AdminPanel />} />
+              <Route path="*" element={<Navigate to="/" replace />} />
+            </Routes>
+          </Layout>
+        } />
+      )}
+    </Routes>
   );
 };
 
 function App() {
   return (
     <AppProvider>
-      <AppContent />
+      <BrowserRouter>
+        <AppContent />
+        <ToastContainer />
+      </BrowserRouter>
     </AppProvider>
   );
 }

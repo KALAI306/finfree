@@ -48,8 +48,7 @@ export const Investments: React.FC = () => {
   const { investments, user, showToast, refreshData, customAssetTypes, addCustomAssetType } = useApp();
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [editingInvestment, setEditingInvestment] = useState<Investment | null>(null);
-  const [timeRange, setTimeRange] = useState<"1M" | "3M" | "6M" | "1Y">("1M");
-  const [tooltipActive, setTooltipActive] = useState(true);
+  const [tooltipActive, setTooltipActive] = useState(false);
 
   // Summary math
   const totalInvested = investments.reduce((sum, inv) => sum + Number(inv.invested_amount), 0);
@@ -85,45 +84,47 @@ export const Investments: React.FC = () => {
 
   const activePieData = Object.values(dynamicPieMap).filter((d) => d.value > 0);
 
-  // Growth Simulator Data (Line chart)
-  const generateGrowthData = (range: string) => {
+  // Real growth chart: uses actual investment creation dates
+  const growthData = React.useMemo(() => {
     if (investments.length === 0) return [];
-    
-    let points = 12;
-    let labelFormat = (idx: number) => `Pt ${idx}`;
-    
-    if (range === "1M") {
-      points = 15;
-      labelFormat = (idx: number) => `Day ${idx * 2}`;
-    } else if (range === "3M") {
-      points = 12;
-      labelFormat = (idx: number) => `Wk ${idx + 1}`;
-    } else if (range === "6M") {
-      points = 12;
-      labelFormat = (idx: number) => `Month ${idx / 2}`;
-    } else if (range === "1Y") {
-      points = 12;
-      labelFormat = (idx: number) => {
-        const months = ["Jul", "Aug", "Sep", "Oct", "Nov", "Dec", "Jan", "Feb", "Mar", "Apr", "May", "Jun"];
-        return months[idx % 12];
-      };
-    }
-    
-    const data = [];
-    
-    for (let i = 0; i < points; i++) {
-      const fraction = i / (points - 1);
-      const noise = Math.sin(i * 1.8) * (totalInvested * 0.012);
-      const value = totalInvested + (totalReturn * fraction) + noise;
-      data.push({
-        name: labelFormat(i),
-        value: Math.round(Math.max(0, value))
+
+    const sorted = [...investments].sort(
+      (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+    );
+
+    const fmt = (d: Date) =>
+      d.toLocaleDateString("en-IN", { day: "numeric", month: "short" });
+
+    const points: { name: string; invested: number; value: number }[] = [];
+    let cumInvested = 0;
+
+    // Starting point (day before first investment)
+    const firstDate = new Date(sorted[0].created_at);
+    firstDate.setDate(firstDate.getDate() - 1);
+    points.push({ name: fmt(firstDate), invested: 0, value: 0 });
+
+    // Each investment add date
+    sorted.forEach((inv) => {
+      cumInvested += Number(inv.invested_amount);
+      points.push({
+        name: fmt(new Date(inv.created_at)),
+        invested: Math.round(cumInvested),
+        value: Math.round(cumInvested), // at time of add, value = invested
+      });
+    });
+
+    // Today — value = current total
+    const today = fmt(new Date());
+    if (points[points.length - 1].name !== today) {
+      points.push({
+        name: "Today",
+        invested: Math.round(cumInvested),
+        value: Math.round(totalCurrentValue),
       });
     }
-    return data;
-  };
 
-  const growthData = generateGrowthData(timeRange);
+    return points;
+  }, [investments, totalCurrentValue]);
 
   const handleDelete = async (id: string) => {
     if (!window.confirm("Are you sure you want to delete this investment?")) return;
@@ -388,57 +389,57 @@ export const Investments: React.FC = () => {
       {/* Visual Charts section */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         
-        {/* Growth Line Chart */}
-        <div className="lg:col-span-2 glass-card rounded-2xl p-6 border border-border space-y-4" onClick={() => setTooltipActive(false)}>
-          <div className="flex justify-between items-center">
+        {/* Growth Chart — real data based on investment creation dates */}
+        <div className="lg:col-span-2 glass-card rounded-2xl p-6 border border-border space-y-4"
+          onTouchStart={() => setTooltipActive(false)}>
+          <div className="flex justify-between items-center flex-wrap gap-2">
             <div className="flex items-center gap-2">
               <LineIcon className="w-5 h-5 text-gold-400" />
               <div>
-                <h4 className="text-base font-bold text-foreground m-0">Portfolio Growth</h4>
-                <span className="text-[10px] text-muted-foreground">Simulated projection based on current values</span>
+                <h4 className="text-base font-bold text-foreground m-0">Portfolio History</h4>
+                <span className="text-[10px] text-muted-foreground">Based on your actual investment dates</span>
               </div>
             </div>
-            
-            {/* Time Selector */}
-            <div className="flex bg-muted p-0.5 rounded-lg border border-border">
-              {(["1M", "3M", "6M", "1Y"] as const).map((r) => (
-                <button
-                  key={r}
-                  onClick={() => setTimeRange(r)}
-                  className={`text-[10px] md:text-xs font-bold px-2 py-1 rounded transition-all ${
-                    timeRange === r ? "bg-gold-500 text-white" : "text-muted-foreground hover:text-foreground"
-                  }`}
-                >
-                  {r}
-                </button>
-              ))}
+            <div className="flex items-center gap-3 text-[10px]">
+              <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-gold-400 inline-block" />Current Value</span>
+              <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block" />Invested</span>
             </div>
           </div>
 
           <div className="h-64 w-full">
             {investments.length === 0 ? (
               <div className="h-full flex items-center justify-center text-muted-foreground text-sm">
-                No investment data to display.
+                Add investments to see your portfolio history.
               </div>
             ) : (
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={growthData} onMouseLeave={() => setTooltipActive(false)} onMouseEnter={() => setTooltipActive(true)}>
+                <AreaChart data={growthData}
+                  onMouseEnter={() => setTooltipActive(true)}
+                  onMouseLeave={() => setTooltipActive(false)}>
                   <defs>
                     <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#C9A13E" stopOpacity={0.4}/>
+                      <stop offset="5%" stopColor="#C9A13E" stopOpacity={0.35}/>
                       <stop offset="95%" stopColor="#C9A13E" stopOpacity={0}/>
+                    </linearGradient>
+                    <linearGradient id="colorInvested" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#10b981" stopOpacity={0.2}/>
+                      <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
                     </linearGradient>
                   </defs>
                   <CartesianGrid strokeDasharray="3 3" stroke="rgba(120,120,120,0.07)" />
-                  <XAxis dataKey="name" stroke="#6b7280" fontSize={11} tickLine={false} />
-                  <YAxis stroke="#6b7280" fontSize={11} tickLine={false} tickFormatter={(val) => `₹${formatIndianNumberOnly(val)}`} />
+                  <XAxis dataKey="name" stroke="#6b7280" fontSize={10} tickLine={false} />
+                  <YAxis stroke="#6b7280" fontSize={10} tickLine={false}
+                    tickFormatter={(val) => `₹${formatIndianNumberOnly(val)}`} width={70} />
                   {tooltipActive && (
                     <Tooltip
-                      contentStyle={{ backgroundColor: "var(--card)", borderColor: "var(--border)", borderRadius: "12px", color: "var(--foreground)" }}
-                      labelClassName="text-muted-foreground text-xs"
-                      formatter={(value: any) => [formatIndianCurrency(value), "Portfolio Value"]}
+                      contentStyle={{ backgroundColor: "var(--card)", borderColor: "var(--border)", borderRadius: "12px", color: "var(--foreground)", fontSize: 12 }}
+                      formatter={(value: any, name: any) => [
+                        formatIndianCurrency(value),
+                        name === "value" ? "Portfolio Value" : "Invested"
+                      ]}
                     />
                   )}
+                  <Area type="stepAfter" dataKey="invested" stroke="#10b981" strokeWidth={1.5} strokeDasharray="4 2" fillOpacity={1} fill="url(#colorInvested)" />
                   <Area type="monotone" dataKey="value" stroke="#C9A13E" strokeWidth={2.5} fillOpacity={1} fill="url(#colorValue)" />
                 </AreaChart>
               </ResponsiveContainer>
