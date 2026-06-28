@@ -93,12 +93,12 @@ function App() {
           const accessToken = params.get("access_token");
           const refreshToken = params.get("refresh_token");
           if (accessToken && refreshToken) {
-            await supabase.auth.setSession({ access_token: accessToken, refresh_token: refreshToken });
+            await supabase!.auth.setSession({ access_token: accessToken, refresh_token: refreshToken });
           }
           // PKCE flow: exchange code
           const code = params.get("code");
           if (code) {
-            await supabase.auth.exchangeCodeForSession(code);
+            await supabase!.auth.exchangeCodeForSession(code);
           }
         }
       }
