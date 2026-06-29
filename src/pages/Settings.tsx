@@ -32,8 +32,9 @@ import {
 
 // Budget Limits sub-component
 const ALL_BUDGET_CATS = [
-  "Food 🍕","Fuel ⛽","Rent/PG 🏠","EMI 💳","Healthcare 🏥",
-  "Shopping 🛍️","Recharges 📱","Gold Investment 🥇","Daily Workers 👷","Miscellaneous 🎯",
+  "Food 🍕","Fuel ⛽","Rent/PG 🏠","EMI 💳","Healthcare 🏥","Medical 💊",
+  "Shopping 🛍️","Recharges 📱","Gold Investment 🥇","Investment 📈",
+  "Entertainment 🎬","Clothing 👕","Daily Workers 👷","Miscellaneous 🎯",
 ];
 
 const BudgetLimitsCard: React.FC<{
@@ -619,7 +620,6 @@ export const Settings: React.FC = () => {
           id: account.id,
           name,
           type: finalType,
-          balance: Number(balance)
         });
 
         showToast("Account updated successfully", "success");
@@ -665,9 +665,11 @@ export const Settings: React.FC = () => {
               type="number"
               step="any"
               value={balance}
-              onChange={(e) => setBalance(e.target.value)}
-              className="w-full bg-background border border-border rounded-xl py-2.5 px-3 text-foreground text-sm focus:outline-none focus:border-gold-500"
+              readOnly
+              disabled
+              className="w-full bg-muted/30 border border-border rounded-xl py-2.5 px-3 text-muted-foreground text-sm cursor-not-allowed opacity-60"
             />
+            <p className="text-[10px] text-muted-foreground mt-1">Auto-calculated from transactions</p>
           </div>
         </div>
 
@@ -1110,6 +1112,62 @@ export const Settings: React.FC = () => {
               </div>
             </div>
           )}
+        </div>
+
+        {/* App Capabilities */}
+        <div className="glass-card rounded-2xl p-6 border border-border space-y-4 lg:col-span-2">
+          <h4 className="text-base font-bold text-foreground flex items-center gap-2">
+            <span className="text-lg">🚀</span> What You Can Do with FinFree
+          </h4>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {[
+              { icon: "💰", title: "Track Accounts", desc: "Add bank accounts, wallets, cash — see all balances in one place" },
+              { icon: "📊", title: "Income & Expenses", desc: "Log every transaction with categories, notes, and dates" },
+              { icon: "📈", title: "Investments", desc: "Track mutual funds, stocks, gold, FDs — monitor returns" },
+              { icon: "💳", title: "EMI Tracker", desc: "Add loans/EMIs, track payments, see remaining tenure" },
+              { icon: "🎯", title: "Savings Goals", desc: "Set financial goals, track progress with visual bars" },
+              { icon: "🔥", title: "Freedom Journey", desc: "Calculate when you'll be financially free based on your savings" },
+              { icon: "📱", title: "Import Statements", desc: "Upload bank PDF statements to auto-import transactions" },
+              { icon: "🔄", title: "Recurring Transactions", desc: "Mark SIPs and recurring payments — auto-created each month" },
+              { icon: "📋", title: "Bulk Operations", desc: "Select all and delete multiple transactions at once" },
+              { icon: "💾", title: "Export & Backup", desc: "Download full JSON backup or CSV export of transactions" },
+              { icon: "🌐", title: "Cloud or Local", desc: "Choose cloud sync (multi-device) or offline-first local storage" },
+              { icon: "🔒", title: "PIN Lock", desc: "Protect your app with a 4-digit PIN" },
+            ].map(item => (
+              <div key={item.title} className="flex items-start gap-3 p-3 rounded-xl bg-muted/20 border border-border">
+                <span className="text-lg shrink-0">{item.icon}</span>
+                <div>
+                  <p className="text-xs font-semibold text-foreground">{item.title}</p>
+                  <p className="text-[10px] text-muted-foreground mt-0.5">{item.desc}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="pt-4 border-t border-border">
+            <h5 className="text-sm font-bold text-foreground flex items-center gap-2 mb-3">
+              <Bot className="w-4 h-4 text-primary" /> Claude AI Integration
+            </h5>
+            <p className="text-xs text-muted-foreground mb-3">Connect to Claude AI and ask anything about your finances in natural language:</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              {[
+                "\"What's my net worth?\"",
+                "\"Add ₹500 for lunch today\"",
+                "\"Show my spending breakdown for June\"",
+                "\"How much did I spend on fuel this month?\"",
+                "\"List my goals and progress\"",
+                "\"Import these transactions from my statement\"",
+                "\"Add a new EMI for my bike loan\"",
+                "\"What's my savings rate this month?\"",
+                "\"Show transactions for SBI account\"",
+                "\"Delete the duplicate petrol entry\"",
+              ].map(q => (
+                <div key={q} className="px-3 py-2 rounded-lg bg-primary/5 border border-primary/10 text-[11px] text-primary/80 font-medium">
+                  {q}
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
 
         {/* Danger Zone */}

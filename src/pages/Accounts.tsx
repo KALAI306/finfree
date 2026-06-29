@@ -147,7 +147,6 @@ export const Accounts: React.FC = () => {
           id: account.id,
           name,
           type: finalType,
-          balance: Number(balance)
         });
 
         showToast("Account updated successfully", "success");
@@ -193,9 +192,11 @@ export const Accounts: React.FC = () => {
               type="number"
               step="any"
               value={balance}
-              onChange={(e) => setBalance(e.target.value)}
-              className="w-full bg-background border border-border rounded-xl py-2.5 px-3 text-foreground text-sm focus:outline-none focus:border-gold-500"
+              readOnly
+              disabled
+              className="w-full bg-muted/30 border border-border rounded-xl py-2.5 px-3 text-muted-foreground text-sm cursor-not-allowed opacity-60"
             />
+            <p className="text-[10px] text-muted-foreground mt-1">Auto-calculated from transactions</p>
           </div>
         </div>
 

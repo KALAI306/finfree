@@ -27,9 +27,13 @@ export const EXPENSE_CATEGORIES = [
   { name: "Rent/PG 🏠", icon: "🏠" },
   { name: "EMI 💳", icon: "💳" },
   { name: "Healthcare 🏥", icon: "🏥" },
+  { name: "Medical 💊", icon: "💊" },
   { name: "Shopping 🛍️", icon: "🛍️" },
   { name: "Recharges 📱", icon: "📱" },
   { name: "Gold Investment 🥇", icon: "🥇" },
+  { name: "Investment 📈", icon: "📈" },
+  { name: "Entertainment 🎬", icon: "🎬" },
+  { name: "Clothing 👕", icon: "👕" },
   { name: "Daily Workers 👷", icon: "👷" },
   { name: "Miscellaneous 🎯", icon: "🎯" },
   { name: "Cash Withdrawal 💸", icon: "💸" }
@@ -71,13 +75,16 @@ export const TransactionForm: React.FC<{
   onClose: () => void;
   transaction?: Transaction;
 }> = ({ onClose, transaction }) => {
-  const { accounts, user, showToast, refreshData, customCategories, addCustomCategory, fmt: formatIndianCurrency } = useApp();
+  const { accounts, user, showToast, refreshData, customCategories, addCustomCategory, editCustomCategory, deleteCustomCategory, fmt: formatIndianCurrency } = useApp();
   const [selectedType, setSelectedType] = useState<"income" | "expense" | "transfer">(
     transaction?.type || "expense"
   );
   const [showAddCustomCat, setShowAddCustomCat] = useState(false);
   const [newCatName, setNewCatName] = useState("");
   const [newCatIcon, setNewCatIcon] = useState("🎯");
+  const [editingCat, setEditingCat] = useState<string | null>(null);
+  const [editCatName, setEditCatName] = useState("");
+  const [editCatIcon, setEditCatIcon] = useState("");
 
   const { register, handleSubmit, setValue, watch, formState: { errors } } = useForm<any>({
     resolver: zodResolver(transactionSchema),
@@ -253,20 +260,30 @@ export const TransactionForm: React.FC<{
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 max-h-36 overflow-y-auto p-1 bg-background border border-border rounded-xl">
             {displayedCategories.map((cat) => {
               const currentCat = watch("category");
+              const isCustom = customCats.some(c => c.name === cat.name);
               return (
-                <button
-                  key={cat.name}
-                  type="button"
-                  onClick={() => setValue("category", cat.name)}
-                  className={`flex items-center gap-2 p-2 rounded-lg text-xs font-semibold transition-all border text-left ${
-                    currentCat === cat.name
-                      ? "bg-primary/15 text-primary border-primary/30"
-                      : "bg-transparent text-muted-foreground border-transparent hover:bg-muted"
-                  }`}
-                >
-                  <span>{cat.icon}</span>
-                  <span className="truncate">{cat.name.replace(/\s[^\x00-\x7F]+$/, "").trim()}</span>
-                </button>
+                <div key={cat.name} className="relative group/cat">
+                  <button
+                    type="button"
+                    onClick={() => setValue("category", cat.name)}
+                    className={`w-full flex items-center gap-2 p-2 rounded-lg text-xs font-semibold transition-all border text-left ${
+                      currentCat === cat.name
+                        ? "bg-primary/15 text-primary border-primary/30"
+                        : "bg-transparent text-muted-foreground border-transparent hover:bg-muted"
+                    }`}
+                  >
+                    <span>{cat.icon}</span>
+                    <span className="truncate">{cat.name.replace(/\s[^\x00-\x7F]+$/, "").trim()}</span>
+                  </button>
+                  {isCustom && (
+                    <div className="absolute -top-1 -right-1 hidden group-hover/cat:flex gap-0.5">
+                      <button type="button" onClick={() => { setEditingCat(cat.name); setEditCatName(cat.name.replace(/\s[^\x00-\x7F]+$/, "").trim()); setEditCatIcon(cat.icon); }}
+                        className="w-4 h-4 rounded-full bg-primary/80 text-white flex items-center justify-center"><Edit2 className="w-2.5 h-2.5" /></button>
+                      <button type="button" onClick={() => { deleteCustomCategory(cat.name); if (currentCat === cat.name) setValue("category", ""); }}
+                        className="w-4 h-4 rounded-full bg-rose-500/80 text-white flex items-center justify-center"><X className="w-2.5 h-2.5" /></button>
+                    </div>
+                  )}
+                </div>
               );
             })}
             <button
@@ -278,6 +295,34 @@ export const TransactionForm: React.FC<{
               <span>Custom...</span>
             </button>
           </div>
+
+          {/* Edit Custom Category Inline */}
+          {editingCat && (
+            <div className="p-3 bg-card border border-primary/20 rounded-xl space-y-3 mt-2">
+              <p className="text-xs font-semibold text-foreground">Edit Category</p>
+              <div className="grid grid-cols-3 gap-2">
+                <div className="col-span-2">
+                  <input type="text" value={editCatName} onChange={(e) => setEditCatName(e.target.value)}
+                    className="w-full bg-background border border-border rounded-lg py-1.5 px-2 text-foreground text-xs focus:outline-none focus:border-primary" />
+                </div>
+                <div>
+                  <input type="text" value={editCatIcon} onChange={(e) => setEditCatIcon(e.target.value)}
+                    className="w-full bg-background border border-border rounded-lg py-1.5 px-2 text-foreground text-xs text-center focus:outline-none focus:border-primary" />
+                </div>
+              </div>
+              <div className="flex gap-2 justify-end">
+                <button type="button" onClick={() => setEditingCat(null)}
+                  className="px-2.5 py-1 rounded bg-muted hover:bg-muted/80 text-foreground text-[10px] font-semibold">Cancel</button>
+                <button type="button" onClick={() => {
+                  if (!editCatName.trim()) return;
+                  const newName = `${editCatName.trim()} ${editCatIcon.trim()}`;
+                  editCustomCategory(editingCat, newName, editCatIcon.trim());
+                  if (watch("category") === editingCat) setValue("category", newName);
+                  setEditingCat(null);
+                }} className="px-2.5 py-1 rounded bg-primary hover:bg-primary/80 text-white text-[10px] font-semibold">Save</button>
+              </div>
+            </div>
+          )}
           {errors.category && <p className="text-rose-400 text-xs mt-1">{getErrorMessage(errors.category)}</p>}
 
           {/* Add Custom Category Inline Sub-Form */}
@@ -401,6 +446,42 @@ export const Transactions: React.FC = () => {
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [isImportOpen, setIsImportOpen] = useState(false);
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkDeleting, setBulkDeleting] = useState(false);
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedIds.size === filteredTxs.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(filteredTxs.map(t => t.id)));
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedIds.size === 0) return;
+    if (!window.confirm(`Delete ${selectedIds.size} selected transaction${selectedIds.size > 1 ? 's' : ''}? This will reverse all balance updates.`)) return;
+    setBulkDeleting(true);
+    try {
+      for (const id of selectedIds) {
+        await deleteTransaction(id);
+      }
+      showToast(`Deleted ${selectedIds.size} transaction${selectedIds.size > 1 ? 's' : ''}`, "info");
+      setSelectedIds(new Set());
+      refreshData();
+    } catch (err) {
+      showToast("Failed to delete some transactions", "error");
+    } finally {
+      setBulkDeleting(false);
+    }
+  };
 
   // Filters state
   const [activeTab, setActiveTab] = useState<"all" | "income" | "expense" | "transfer">("all");
@@ -586,6 +667,28 @@ export const Transactions: React.FC = () => {
         </div>
       </div>
 
+      {/* Bulk Actions */}
+      {filteredTxs.length > 0 && (
+        <div className="flex items-center justify-between px-1">
+          <button
+            onClick={toggleSelectAll}
+            className="text-xs text-primary hover:underline font-semibold cursor-pointer"
+          >
+            {selectedIds.size === filteredTxs.length ? "Deselect All" : "Select All"}
+          </button>
+          {selectedIds.size > 0 && (
+            <button
+              onClick={handleBulkDelete}
+              disabled={bulkDeleting}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 text-xs font-semibold transition-all cursor-pointer disabled:opacity-50"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              {bulkDeleting ? "Deleting..." : `Delete Selected (${selectedIds.size})`}
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Transactions Table / List Container */}
       <div className="aurora-card p-4">
         {filteredTxs.length === 0 ? (
@@ -605,6 +708,12 @@ export const Transactions: React.FC = () => {
                 return (
                   <div key={tx.id} className="flex justify-between items-center py-4 hover:bg-muted/30 transition-colors px-2 -mx-2 rounded-lg group">
                     <div className="flex items-center gap-3 min-w-0">
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.has(tx.id)}
+                        onChange={() => toggleSelect(tx.id)}
+                        className="w-4 h-4 rounded border-border text-primary shrink-0 cursor-pointer"
+                      />
                       <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-lg shrink-0 ${
                         isIncome 
                           ? "bg-emerald-500/10 text-emerald-500 border border-emerald-500/20" 
@@ -669,6 +778,14 @@ export const Transactions: React.FC = () => {
               <table className="w-full text-left border-collapse">
                 <thead>
                   <tr className="border-b border-border text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                    <th className="py-3 px-2 w-8">
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.size === filteredTxs.length && filteredTxs.length > 0}
+                        onChange={toggleSelectAll}
+                        className="w-4 h-4 rounded border-border text-primary cursor-pointer"
+                      />
+                    </th>
                     <th className="py-3 px-4">Date</th>
                     <th className="py-3 px-4">Type</th>
                     <th className="py-3 px-4">Note / Description</th>
@@ -687,6 +804,14 @@ export const Transactions: React.FC = () => {
 
                     return (
                       <tr key={tx.id} className="hover:bg-muted/20 transition-colors group">
+                        <td className="py-3.5 px-2 w-8">
+                          <input
+                            type="checkbox"
+                            checked={selectedIds.has(tx.id)}
+                            onChange={() => toggleSelect(tx.id)}
+                            className="w-4 h-4 rounded border-border text-primary cursor-pointer"
+                          />
+                        </td>
                         <td className="py-3.5 px-4 text-sm text-foreground/90 whitespace-nowrap">
                           {new Date(tx.date).toLocaleDateString("en-IN", { day: '2-digit', month: 'short', year: 'numeric' })}
                         </td>

@@ -154,7 +154,7 @@ export const Dashboard: React.FC = () => {
 
   const starredAccounts = accounts.filter(a => starredAccountIds.includes(a.id));
   const recentTxs = [...transactions].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()).slice(0, 6);
-  const monthlySavingsRate = monthlySalary > 0 ? ((monthlySalary - monthlyExpense) / monthlySalary) * 100 : 0;
+  const monthlySavingsRate = monthlyIncome > 0 ? ((monthlyIncome - monthlyExpense) / monthlyIncome) * 100 : 0;
 
   const [refreshing, setRefreshing] = useState(false);
   const handleRefresh = async () => {
@@ -462,13 +462,13 @@ export const Dashboard: React.FC = () => {
               <TrendingUp className="w-4 h-4" />
             </div>
           </div>
-          <div className="kpi-number text-foreground">{formatIndianCurrency(monthlyInvested)}</div>
-          <div className="mt-2 text-[11px] text-muted-foreground">This month</div>
+          <div className="kpi-number text-foreground">{formatIndianCurrency(totalInvestmentValue)}</div>
+          <div className="mt-2 text-[11px] text-muted-foreground">Total portfolio value</div>
           <div className="mt-3 progress-track">
             <div
               className="progress-fill"
               style={{
-                width: monthlyIncome > 0 ? `${Math.min(100, (monthlyInvested / monthlyIncome) * 100)}%` : "0%",
+                width: totalInvestmentValue > 0 ? "100%" : "0%",
                 background: "#8b5cf6",
                 boxShadow: "none"
               }}
@@ -484,8 +484,8 @@ export const Dashboard: React.FC = () => {
               <CreditCard className="w-4 h-4" />
             </div>
           </div>
-          <div className="kpi-number text-foreground">{emiRatio.toFixed(1)}%</div>
-          <div className={`mt-2 text-[11px] font-semibold ${emiStatus.color}`}>{emiStatus.label} · ≤15% ideal</div>
+          <div className="kpi-number text-foreground">{monthlySalary > 0 ? `${emiRatio.toFixed(1)}%` : "—"}</div>
+          <div className={`mt-2 text-[11px] font-semibold ${monthlySalary > 0 ? emiStatus.color : "text-amber-400"}`}>{monthlySalary > 0 ? `${emiStatus.label} · ≤15% ideal` : "Set salary to calculate"}</div>
           <div className="mt-3 progress-track">
             <div
               className="progress-fill"
@@ -551,7 +551,7 @@ export const Dashboard: React.FC = () => {
               <div className="text-3xl font-bold font-mono" style={{ color: accentColor }}>
                 {monthlySavingsRate > 0 ? monthlySavingsRate.toFixed(0) : 0}%
               </div>
-              <div className="text-xs text-muted-foreground mt-1">of monthly salary</div>
+              <div className="text-xs text-muted-foreground mt-1">of monthly income</div>
             </div>
             <div className="flex-1 space-y-1.5">
               <div className="flex justify-between text-[10px] text-muted-foreground">

@@ -61,6 +61,8 @@ interface AppContextType {
   setThemeColor: (color: "gold" | "green" | "blue" | "purple" | "rose") => void;
   customCategories: { name: string; icon: string; type: "income" | "expense" }[];
   addCustomCategory: (name: string, icon: string, type: "income" | "expense") => void;
+  editCustomCategory: (oldName: string, newName: string, newIcon: string) => void;
+  deleteCustomCategory: (name: string) => void;
   customAccountTypes: string[];
   addCustomAccountType: (type: string) => void;
   customAssetTypes: string[];
@@ -194,6 +196,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setCustomCategories(updated);
     localStorage.setItem(`finfree_custom_categories_${user.id}`, JSON.stringify(updated));
     showToast(`Added custom category: ${name}`, "success");
+  };
+
+  const editCustomCategory = (oldName: string, newName: string, newIcon: string) => {
+    if (!user?.id) return;
+    const updated = customCategories.map(c => c.name === oldName ? { ...c, name: newName, icon: newIcon } : c);
+    setCustomCategories(updated);
+    localStorage.setItem(`finfree_custom_categories_${user.id}`, JSON.stringify(updated));
+    showToast(`Updated category: ${newName}`, "success");
+  };
+
+  const deleteCustomCategory = (name: string) => {
+    if (!user?.id) return;
+    const updated = customCategories.filter(c => c.name !== name);
+    setCustomCategories(updated);
+    localStorage.setItem(`finfree_custom_categories_${user.id}`, JSON.stringify(updated));
+    showToast(`Removed category: ${name}`, "info");
   };
 
   const addCustomAccountType = (type: string) => {
@@ -575,6 +593,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setThemeColor,
         customCategories,
         addCustomCategory,
+        editCustomCategory,
+        deleteCustomCategory,
         customAccountTypes,
         addCustomAccountType,
         customAssetTypes,
