@@ -20,16 +20,18 @@ const TOOLS = [
   },
   {
     name: 'list_transactions',
-    description: 'List transactions with optional filters. Returns up to 100 results sorted by date descending.',
+    description: 'List transactions with optional filters. Returns up to 100 results sorted by date descending. Filter by account using account_id or account_name.',
     inputSchema: {
       type: 'object',
       properties: {
-        limit:      { type: 'number', description: 'Max results (default 50, max 100)' },
-        type:       { type: 'string', enum: ['income', 'expense', 'transfer'], description: 'Filter by transaction type' },
-        category:   { type: 'string', description: 'Partial match on category name' },
-        from_date:  { type: 'string', description: 'Start date inclusive, format YYYY-MM-DD' },
-        to_date:    { type: 'string', description: 'End date inclusive, format YYYY-MM-DD' },
-        keyword:    { type: 'string', description: 'Partial match on note or category' },
+        limit:        { type: 'number', description: 'Max results (default 50, max 100)' },
+        type:         { type: 'string', enum: ['income', 'expense', 'transfer'], description: 'Filter by transaction type' },
+        category:     { type: 'string', description: 'Partial match on category name' },
+        from_date:    { type: 'string', description: 'Start date inclusive, format YYYY-MM-DD' },
+        to_date:      { type: 'string', description: 'End date inclusive, format YYYY-MM-DD' },
+        keyword:      { type: 'string', description: 'Partial match on note or category' },
+        account_id:   { type: 'string', description: 'Filter to one account by UUID' },
+        account_name: { type: 'string', description: 'Filter to one account by name (case-insensitive, use instead of account_id)' },
       },
     },
   },
@@ -80,40 +82,44 @@ const TOOLS = [
   // ── TRANSACTIONS ──────────────────────────────────────────────────────────────
   {
     name: 'add_transaction',
-    description: 'Record a single income or expense transaction. Use list_accounts to get valid account_id values first.',
+    description: 'Record a single income or expense transaction. Provide either account_id (from list_accounts) or account_name (matched case-insensitively) — account_name is easier when you don\'t already have the UUID.',
     inputSchema: {
       type: 'object',
-      required: ['type', 'amount', 'category', 'account_id', 'date'],
+      required: ['type', 'amount', 'category', 'date'],
       properties: {
-        type:       { type: 'string', enum: ['income', 'expense'], description: 'income or expense' },
-        amount:     { type: 'number', description: 'Positive number' },
-        category:   { type: 'string', description: 'E.g. "Food 🍕", "Salary 💼", "Fuel ⛽"' },
-        account_id: { type: 'string', description: 'UUID from list_accounts' },
-        date:       { type: 'string', description: 'YYYY-MM-DD' },
-        note:       { type: 'string', description: 'Optional note or description' },
+        type:         { type: 'string', enum: ['income', 'expense'], description: 'income or expense' },
+        amount:       { type: 'number', description: 'Positive number' },
+        category:     { type: 'string', description: 'E.g. "Food 🍕", "Salary 💼", "Fuel ⛽"' },
+        account_id:   { type: 'string', description: 'UUID from list_accounts (use this OR account_name)' },
+        account_name: { type: 'string', description: 'Account name, case-insensitive match (use this OR account_id)' },
+        date:         { type: 'string', description: 'YYYY-MM-DD' },
+        note:         { type: 'string', description: 'Optional note or description' },
       },
     },
   },
   {
     name: 'bulk_add_transactions',
-    description: 'Add multiple transactions at once. More efficient than calling add_transaction repeatedly.',
+    description: 'Add multiple transactions at once. Set a top-level account_id/account_name to apply to all of them, or set it per-transaction to mix accounts. Account balances are updated for every transaction added.',
     inputSchema: {
       type: 'object',
       required: ['transactions'],
       properties: {
+        account_id:   { type: 'string', description: 'Default account UUID applied to any transaction that omits one' },
+        account_name: { type: 'string', description: 'Default account name applied to any transaction that omits one' },
         transactions: {
           type: 'array',
           description: 'Array of transactions to add',
           items: {
             type: 'object',
-            required: ['type', 'amount', 'category', 'account_id', 'date'],
+            required: ['type', 'amount', 'category', 'date'],
             properties: {
-              type:       { type: 'string', enum: ['income', 'expense'] },
-              amount:     { type: 'number' },
-              category:   { type: 'string' },
-              account_id: { type: 'string' },
-              date:       { type: 'string', description: 'YYYY-MM-DD' },
-              note:       { type: 'string' },
+              type:         { type: 'string', enum: ['income', 'expense'] },
+              amount:       { type: 'number' },
+              category:     { type: 'string' },
+              account_id:   { type: 'string', description: 'Overrides the top-level account for this row' },
+              account_name: { type: 'string', description: 'Overrides the top-level account for this row' },
+              date:         { type: 'string', description: 'YYYY-MM-DD' },
+              note:         { type: 'string' },
             },
           },
         },
@@ -149,7 +155,7 @@ const TOOLS = [
   },
   {
     name: 'bulk_delete_transactions',
-    description: 'Delete multiple transactions at once matching a filter. At least one filter must be provided. Returns count of deleted records.',
+    description: 'Delete multiple transactions at once matching a filter. At least one filter must be provided.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -165,7 +171,7 @@ const TOOLS = [
   // ── ACCOUNTS ──────────────────────────────────────────────────────────────────
   {
     name: 'create_account',
-    description: `Create a new bank/cash account. Valid types: ${ACCOUNT_TYPES.join(', ')}. You may also pass any custom type string.`,
+    description: `Create a new bank/cash account. Common types: ${ACCOUNT_TYPES.join(', ')}. Custom type strings are also accepted (no DB constraint).`,
     inputSchema: {
       type: 'object',
       required: ['name', 'type'],
@@ -178,15 +184,14 @@ const TOOLS = [
   },
   {
     name: 'update_account',
-    description: "Update an account's name, type, or balance by ID. Only provided fields are changed.",
+    description: "Update an account's name or type by ID. Balance is NOT editable here — it is auto-calculated from transactions. To change the opening balance, use update_account with a new initial reference point isn't supported; adjust via a transaction instead.",
     inputSchema: {
       type: 'object',
       required: ['id'],
       properties: {
-        id:      { type: 'string', description: 'Account UUID from list_accounts' },
-        name:    { type: 'string', description: 'New account name' },
-        type:    { type: 'string', description: 'New account type' },
-        balance: { type: 'number', description: 'New balance (sets absolute value, not an adjustment)' },
+        id:   { type: 'string', description: 'Account UUID from list_accounts' },
+        name: { type: 'string', description: 'New account name' },
+        type: { type: 'string', description: 'New account type' },
       },
     },
   },
@@ -204,13 +209,13 @@ const TOOLS = [
   // ── INVESTMENTS ───────────────────────────────────────────────────────────────
   {
     name: 'add_investment',
-    description: `Add a new investment holding. Call get_investment_types first to see valid type values. Built-in types: ${INVESTMENT_TYPES.join(', ')}. Custom types are also accepted.`,
+    description: `Add a new investment holding. Call get_investment_types first to confirm valid type values. Built-in types (lowercase): ${INVESTMENT_TYPES.join(', ')}. Custom type strings are also accepted.`,
     inputSchema: {
       type: 'object',
       required: ['name', 'type', 'invested_amount', 'current_value'],
       properties: {
         name:            { type: 'string', description: 'Investment name, e.g. "Groww Nifty 50"' },
-        type:            { type: 'string', description: `Investment type. Built-in: ${INVESTMENT_TYPES.join(', ')}` },
+        type:            { type: 'string', enum: [...INVESTMENT_TYPES], description: `Investment type, lowercase. One of: ${INVESTMENT_TYPES.join(', ')}. Use a custom string if none fit.` },
         invested_amount: { type: 'number', description: 'Total amount invested (cost basis)' },
         current_value:   { type: 'number', description: 'Current market value' },
         quantity:        { type: 'number', description: 'Number of units/shares (optional)' },
@@ -227,7 +232,7 @@ const TOOLS = [
       properties: {
         id:              { type: 'string', description: 'Investment UUID from list_investments' },
         name:            { type: 'string', description: 'New investment name' },
-        type:            { type: 'string', description: `New type. Built-in: ${INVESTMENT_TYPES.join(', ')}` },
+        type:            { type: 'string', enum: [...INVESTMENT_TYPES], description: `New type, lowercase. One of: ${INVESTMENT_TYPES.join(', ')}` },
         invested_amount: { type: 'number', description: 'New cost basis amount' },
         current_value:   { type: 'number', description: 'New current market value' },
         quantity:        { type: 'number', description: 'New quantity/units' },
@@ -301,6 +306,23 @@ const TOOLS = [
   },
   // ── EMIs ──────────────────────────────────────────────────────────────────────
   {
+    name: 'add_emi',
+    description: 'Create a new EMI/loan entry. DB column for total loan amount is "principal" (not total_amount).',
+    inputSchema: {
+      type: 'object',
+      required: ['name', 'principal', 'interest_rate', 'tenure_months', 'emi_amount', 'start_date'],
+      properties: {
+        name:          { type: 'string', description: 'Loan/EMI name, e.g. "Home Loan - HDFC"' },
+        principal:     { type: 'number', description: 'Total loan principal amount' },
+        interest_rate: { type: 'number', description: 'Annual interest rate in percent, e.g. 8.5' },
+        tenure_months: { type: 'number', description: 'Total loan tenure in months' },
+        emi_amount:    { type: 'number', description: 'Monthly EMI amount' },
+        start_date:    { type: 'string', description: 'Loan start date YYYY-MM-DD' },
+        paid_months:   { type: 'number', description: 'Number of EMIs already paid (default 0)' },
+      },
+    },
+  },
+  {
     name: 'update_emi',
     description: 'Update an EMI/loan entry by ID. Only provided fields are changed. DB column for total loan amount is "principal" (not total_amount).',
     inputSchema: {
@@ -350,6 +372,25 @@ async function getUserFromToken(token: string, supabase: ReturnType<typeof creat
   return data.user_id as string;
 }
 
+async function resolveAccountId(args: Record<string, unknown>, userId: string, supabase: ReturnType<typeof createClient>): Promise<string> {
+  if (args.account_id) return args.account_id as string;
+  if (args.account_name) {
+    const { data, error } = await supabase.from('accounts').select('id,name').eq('user_id', userId);
+    if (error) throw error;
+    const q = String(args.account_name).toLowerCase();
+    const rows = (data || []) as { id: string; name: string }[];
+    const match = rows.find(a => a.name.toLowerCase() === q) || rows.find(a => a.name.toLowerCase().includes(q));
+    if (!match) throw new Error(`No account found matching "${args.account_name}". Use list_accounts to see valid names.`);
+    return match.id;
+  }
+  throw new Error('Provide either account_id or account_name.');
+}
+
+async function adjustAccountBalance(accountId: string, delta: number, supabase: ReturnType<typeof createClient>) {
+  const { data: acc } = await supabase.from('accounts').select('balance').eq('id', accountId).single();
+  if (acc) await supabase.from('accounts').update({ balance: Number((acc as any).balance) + delta }).eq('id', accountId);
+}
+
 async function handleTool(name: string, args: Record<string, unknown>, userId: string, supabase: ReturnType<typeof createClient>): Promise<unknown> {
   switch (name) {
 
@@ -378,7 +419,7 @@ async function handleTool(name: string, args: Record<string, unknown>, userId: s
       return {
         profile: { name: profile.name, age: profile.age, monthly_salary: profile.monthly_salary, freedom_target: profile.freedom_target },
         net_worth: { total: netWorth, liquid_cash: totalCash, invested: totalInvested, family_debt: profile.family_debt },
-        this_month: { income: monthIncome, expenses: monthExpense, saved: monthIncome - monthExpense },
+        this_month: { income: monthIncome, expenses: monthExpense, saved: monthIncome - monthExpense, savings_rate_pct: monthIncome > 0 ? Math.round(((monthIncome - monthExpense) / monthIncome) * 100) : null },
         accounts: accounts.map((a: any) => ({ id: a.id, name: a.name, type: a.type, balance: a.balance })),
         investments: investments.map((i: any) => ({ id: i.id, name: i.name, type: i.type, invested: i.invested_amount, current_value: i.current_value, return_percent: i.return_percent })),
         emis: emis.map((e: any) => ({ id: e.id, name: e.name, emi_amount: e.emi_amount, principal: e.principal, paid_months: e.paid_months, tenure_months: e.tenure_months })),
@@ -394,6 +435,12 @@ async function handleTool(name: string, args: Record<string, unknown>, userId: s
       if (args.type) query = query.eq('type', args.type as string);
       if (args.from_date) query = query.gte('date', args.from_date as string);
       if (args.to_date) query = query.lte('date', args.to_date as string);
+      if (args.account_id) {
+        query = query.eq('account_id', args.account_id as string);
+      } else if (args.account_name) {
+        const accId = await resolveAccountId(args, userId, supabase);
+        query = query.eq('account_id', accId);
+      }
       query = query.limit(Math.min((args.limit as number) || 50, 100));
       const { data, error } = await query;
       if (error) throw error;
@@ -432,19 +479,30 @@ async function handleTool(name: string, args: Record<string, unknown>, userId: s
     case 'list_emis': { const { data, error } = await supabase.from('emis').select('*').eq('user_id', userId); if (error) throw error; return data; }
 
     case 'add_transaction': {
-      const { data: acc } = await supabase.from('accounts').select('balance').eq('id', args.account_id as string).single();
-      if (!acc) throw new Error('Account not found. Use list_accounts to get valid IDs.');
-      const { data, error } = await supabase.from('transactions').insert([{ user_id: userId, type: args.type, amount: args.amount, category: args.category, account_id: args.account_id, date: args.date, note: args.note || '', is_recurring: false }]).select().single();
+      const accountId = await resolveAccountId(args, userId, supabase);
+      const { data: acc } = await supabase.from('accounts').select('balance').eq('id', accountId).single();
+      if (!acc) throw new Error('Account not found.');
+      const { data, error } = await supabase.from('transactions').insert([{ user_id: userId, type: args.type, amount: args.amount, category: args.category, account_id: accountId, date: args.date, note: args.note || '', is_recurring: false }]).select().single();
       if (error) throw error;
       const delta = args.type === 'income' ? Number(args.amount) : -Number(args.amount);
-      await supabase.from('accounts').update({ balance: Number((acc as any).balance) + delta }).eq('id', args.account_id as string);
+      await adjustAccountBalance(accountId, delta, supabase);
       return { success: true, transaction: data };
     }
 
     case 'bulk_add_transactions': {
-      const txs = ((args.transactions as any[]) || []).map((t: any) => ({ user_id: userId, is_recurring: false, note: '', ...t }));
-      const { data, error } = await supabase.from('transactions').insert(txs).select();
+      const hasDefault = args.account_id || args.account_name;
+      const defaultAccountId = hasDefault ? await resolveAccountId(args, userId, supabase) : null;
+      const rows: any[] = [];
+      for (const t of (args.transactions as any[]) || []) {
+        const accId = (t.account_id || t.account_name) ? await resolveAccountId(t, userId, supabase) : defaultAccountId;
+        if (!accId) throw new Error('Each transaction needs account_id/account_name, or set one at the top level.');
+        rows.push({ user_id: userId, is_recurring: false, note: t.note || '', type: t.type, amount: t.amount, category: t.category, date: t.date, account_id: accId });
+      }
+      const { data, error } = await supabase.from('transactions').insert(rows).select();
       if (error) throw error;
+      const byAccount: Record<string, number> = {};
+      for (const r of rows) byAccount[r.account_id] = (byAccount[r.account_id] || 0) + (r.type === 'income' ? Number(r.amount) : -Number(r.amount));
+      for (const [accId, delta] of Object.entries(byAccount)) await adjustAccountBalance(accId, delta, supabase);
       return { success: true, added: (data || []).length };
     }
 
@@ -465,8 +523,7 @@ async function handleTool(name: string, args: Record<string, unknown>, userId: s
       const { data: tx } = await supabase.from('transactions').select('*').eq('id', args.id as string).eq('user_id', userId).single();
       if (tx) {
         const delta = tx.type === 'income' ? -Number(tx.amount) : Number(tx.amount);
-        const { data: acc } = await supabase.from('accounts').select('balance').eq('id', tx.account_id).single();
-        if (acc) await supabase.from('accounts').update({ balance: Number((acc as any).balance) + delta }).eq('id', tx.account_id);
+        await adjustAccountBalance(tx.account_id, delta, supabase);
       }
       const { error } = await supabase.from('transactions').delete().eq('id', args.id as string).eq('user_id', userId);
       if (error) throw error;
@@ -502,8 +559,7 @@ async function handleTool(name: string, args: Record<string, unknown>, userId: s
       const updates: Record<string, unknown> = {};
       if (args.name !== undefined) updates.name = args.name;
       if (args.type !== undefined) updates.type = args.type;
-      if (args.balance !== undefined) updates.balance = args.balance;
-      if (!Object.keys(updates).length) throw new Error('Provide at least one field to update.');
+      if (!Object.keys(updates).length) throw new Error('Provide at least one field to update (name or type). Balance cannot be edited directly.');
       const { data, error } = await supabase.from('accounts').update(updates).eq('id', args.id as string).eq('user_id', userId).select().single();
       if (error) throw error;
       return { success: true, account: data };
@@ -574,6 +630,13 @@ async function handleTool(name: string, args: Record<string, unknown>, userId: s
       return { success: true };
     }
 
+    case 'add_emi': {
+      const emi = { user_id: userId, name: args.name, principal: args.principal, interest_rate: args.interest_rate, tenure_months: args.tenure_months, emi_amount: args.emi_amount, start_date: args.start_date, paid_months: args.paid_months ?? 0 };
+      const { data, error } = await supabase.from('emis').insert([emi]).select().single();
+      if (error) throw error;
+      return { success: true, emi: data };
+    }
+
     case 'update_emi': {
       const updates: Record<string, unknown> = {};
       if (args.name !== undefined) updates.name = args.name;
@@ -619,37 +682,82 @@ async function handleTool(name: string, args: Record<string, unknown>, userId: s
   }
 }
 
+const CORS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, mcp-protocol-version, mcp-session-id',
+  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+};
+
+function rpc(id: unknown, body: Record<string, unknown>) {
+  return new Response(JSON.stringify({ jsonrpc: '2.0', id: id ?? null, ...body }), { headers: { ...CORS, 'Content-Type': 'application/json' } });
+}
+
 Deno.serve(async (req: Request) => {
-  const cors = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type', 'Access-Control-Allow-Methods': 'GET, POST, OPTIONS' };
-  if (req.method === 'OPTIONS') return new Response(null, { headers: cors });
+  if (req.method === 'OPTIONS') return new Response(null, { headers: CORS });
 
+  // Per MCP Streamable HTTP transport spec, GET is only for opening an SSE
+  // stream for server-initiated messages. This server is stateless request/response
+  // JSON-only, so a GET here must return 405 — not a tools/list payload — otherwise
+  // a client probing for SSE support gets a confusing non-standard response and may
+  // abort the whole connection (showing as "no tools available").
+  if (req.method === 'GET') return new Response(null, { status: 405, headers: CORS });
+  if (req.method !== 'POST') return new Response(null, { status: 405, headers: CORS });
+
+  const url = new URL(req.url);
+  const token = url.searchParams.get('token');
+  const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
+
+  let json: any;
   try {
-    const url = new URL(req.url);
-    const token = url.searchParams.get('token');
-    if (!token) return new Response(JSON.stringify({ error: 'Missing token. Add ?token=YOUR_TOKEN to the URL.' }), { status: 401, headers: { ...cors, 'Content-Type': 'application/json' } });
+    json = await req.json();
+  } catch {
+    return rpc(null, { error: { code: -32700, message: 'Parse error: invalid JSON body' } });
+  }
 
-    const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
+  const { method, id } = json || {};
+
+  // JSON-RPC notifications (no "id") never get a JSON-RPC response body — only
+  // a bare 202. Falling through to an error response here (as the previous
+  // version did for notifications/initialized) makes some MCP clients treat
+  // the whole handshake as failed and silently report zero tools.
+  if (typeof method === 'string' && method.startsWith('notifications/')) {
+    return new Response(null, { status: 202, headers: CORS });
+  }
+
+  if (method === 'ping') return rpc(id, { result: {} });
+
+  // initialize and tools/list intentionally do NOT require the token — tool
+  // schemas are not sensitive, and gating discovery on auth was the main
+  // cause of "no tools available": any token timing/mismatch issue made
+  // tools/list fail before the client ever saw the tool list. Only tools/call
+  // (real data access) is auth-gated below.
+  if (method === 'initialize') {
+    return rpc(id, { result: { protocolVersion: '2024-11-05', capabilities: { tools: {} }, serverInfo: { name: 'finfree', version: '2.1.0' } } });
+  }
+
+  if (method === 'tools/list') {
+    return rpc(id, { result: { tools: TOOLS } });
+  }
+
+  // Defensive: respond gracefully if a client probes capabilities we didn't
+  // declare, instead of erroring the whole session.
+  if (method === 'resources/list') return rpc(id, { result: { resources: [] } });
+  if (method === 'prompts/list') return rpc(id, { result: { prompts: [] } });
+
+  if (method === 'tools/call') {
+    if (!token) return rpc(id, { error: { code: -32001, message: 'Missing token. Add ?token=YOUR_TOKEN to the connector URL.' } });
     const userId = await getUserFromToken(token, supabase);
-    if (!userId) return new Response(JSON.stringify({ error: 'Invalid or expired token.' }), { status: 401, headers: { ...cors, 'Content-Type': 'application/json' } });
+    if (!userId) return rpc(id, { error: { code: -32001, message: 'Invalid or expired token.' } });
 
-    const json = req.method === 'POST' ? await req.json().catch(() => ({})) : {};
-
-    if (json.method === 'initialize')
-      return new Response(JSON.stringify({ jsonrpc: '2.0', id: json.id ?? 1, result: { protocolVersion: '2024-11-05', capabilities: { tools: {} }, serverInfo: { name: 'finfree', version: '2.0.0' } } }), { headers: { ...cors, 'Content-Type': 'application/json' } });
-
-    if (req.method === 'GET' || json.method === 'tools/list')
-      return new Response(JSON.stringify({ jsonrpc: '2.0', id: json.id ?? 1, result: { tools: TOOLS } }), { headers: { ...cors, 'Content-Type': 'application/json' } });
-
-    if (json.method === 'tools/call') {
+    try {
       const { name, arguments: toolArgs = {} } = json.params || {};
       const result = await handleTool(name, toolArgs, userId, supabase);
-      return new Response(JSON.stringify({ jsonrpc: '2.0', id: json.id ?? 1, result: { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] } }), { headers: { ...cors, 'Content-Type': 'application/json' } });
+      return rpc(id, { result: { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] } });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return rpc(id, { result: { content: [{ type: 'text', text: `Error: ${msg}` }], isError: true } });
     }
-
-    return new Response(JSON.stringify({ error: 'Unknown method' }), { status: 400, headers: { ...cors, 'Content-Type': 'application/json' } });
-
-  } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : String(err);
-    return new Response(JSON.stringify({ error: msg }), { status: 500, headers: { ...cors, 'Content-Type': 'application/json' } });
   }
+
+  return rpc(id, { error: { code: -32601, message: `Method not found: ${method}` } });
 });
