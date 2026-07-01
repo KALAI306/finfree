@@ -123,13 +123,13 @@ export const FloatingAiAssistant: React.FC = () => {
       setMessages(prev => [...prev.slice(0, -1), { role: 'assistant', text: reply }]);
       setHistory(prev => [...prev, { role: 'assistant', content: reply }]);
     } catch (e: any) {
-      const errMsg = msg.includes('VITE_AI_WORKER_URL')
+      const errMsg = e.message?.includes('VITE_AI_WORKER_URL')
         ? 'Worker not configured. Add VITE_AI_WORKER_URL to .env.'
-        : msg.includes('All AI providers failed')
+        : e.message?.includes('All AI providers failed')
         ? 'All AI providers failed — add API keys in AI Settings.'
-        : msg.includes('429') || msg.includes('Too many')
+        : e.message?.includes('429') || e.message?.includes('Too many')
         ? 'Rate limit hit. Wait a moment and try again.'
-        : `Error: ${msg}`;
+        : `Error: ${e.message}`;
       setError(errMsg);
       setMessages(prev => prev.slice(0, -1));
     } finally {

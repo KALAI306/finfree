@@ -7,7 +7,7 @@ import {
   fetchAIMemory,
   clearAIMemory,
   fetchAIHealth,
-  type AISettings,
+  type AISettings as AISettingsData,
   type AIUsageLog,
   type AIMemoryItem,
 } from '../lib/openai';
@@ -195,7 +195,7 @@ const KeyInput: React.FC<{
 export const AISettings: React.FC = () => {
   const { user, showToast } = useApp();
 
-  const [settings,    setSettings]    = useState<Partial<AISettings>>({});
+  const [settings,    setSettings]    = useState<Partial<AISettingsData>>({});
   const [logs,        setLogs]        = useState<AIUsageLog[]>([]);
   const [memory,      setMemory]      = useState<AIMemoryItem[]>([]);
   const [health,      setHealth]      = useState<{ status: string; total_ai_calls: number; keys_configured: number }>({ status: 'checking', total_ai_calls: 0, keys_configured: 0 });
