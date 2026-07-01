@@ -183,7 +183,7 @@ export const FloatingAiAssistant: React.FC = () => {
                 </div>
                 <div>
                   <p className="text-xs font-bold text-foreground leading-none">FinFree AI</p>
-                  <p className="text-[10px] text-emerald-400 mt-0.5">Gemini 2.0 Flash · Live data</p>
+                  <p className="text-[10px] text-emerald-400 mt-0.5">Your financial assistant</p>
                 </div>
               </div>
               <div className="flex items-center gap-1">

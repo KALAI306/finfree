@@ -44,7 +44,6 @@ const navItems = [
   { path: "/goals",      label: "Goals",       icon: Target     },
   { path: "/rules",      label: "Rules",       icon: ShieldCheck },
   { path: "/reports",    label: "Reports",     icon: BarChart3  },
-  { path: "/ai-settings", label: "AI Settings", icon: Bot       },
 ];
 
 // First 4 in bottom bar, rest in drawer
@@ -113,14 +112,24 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
             );
           })}
           {isAdmin && (
-            <Link
-              to="/admin"
-              className={`nav-item ${isActive("/admin") ? "active" : ""}`}
-              aria-current={isActive("/admin") ? "page" : undefined}
-            >
-              <Shield className={`w-[18px] h-[18px] shrink-0 transition-colors ${isActive("/admin") ? "text-primary" : "text-amber-400"}`} />
-              <span className="text-amber-400 font-semibold">Admin Panel</span>
-            </Link>
+            <>
+              <Link
+                to="/ai-settings"
+                className={`nav-item ${isActive("/ai-settings") ? "active" : ""}`}
+                aria-current={isActive("/ai-settings") ? "page" : undefined}
+              >
+                <Bot className={`w-[18px] h-[18px] shrink-0 transition-colors ${isActive("/ai-settings") ? "text-primary" : "text-amber-400"}`} />
+                <span className="text-amber-400 font-semibold">AI Settings</span>
+              </Link>
+              <Link
+                to="/admin"
+                className={`nav-item ${isActive("/admin") ? "active" : ""}`}
+                aria-current={isActive("/admin") ? "page" : undefined}
+              >
+                <Shield className={`w-[18px] h-[18px] shrink-0 transition-colors ${isActive("/admin") ? "text-primary" : "text-amber-400"}`} />
+                <span className="text-amber-400 font-semibold">Admin Panel</span>
+              </Link>
+            </>
           )}
         </nav>
 
@@ -357,18 +366,32 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
                 <span className="text-[11px] mt-2 font-semibold">Settings</span>
               </Link>
               {isAdmin && (
-                <Link
-                  to="/admin"
-                  onClick={() => setDrawerOpen(false)}
-                  className={`flex flex-col items-center justify-center p-3.5 rounded-xl border transition-all cursor-pointer ${
-                    isActive("/admin")
-                      ? "bg-amber-500/15 border-amber-500/40 text-amber-400"
-                      : "border-amber-500/20 bg-amber-500/5 text-amber-400 hover:bg-amber-500/10"
-                  }`}
-                >
-                  <Shield className="w-5 h-5" strokeWidth={1.8} />
-                  <span className="text-[11px] mt-2 font-semibold">Admin</span>
-                </Link>
+                <>
+                  <Link
+                    to="/ai-settings"
+                    onClick={() => setDrawerOpen(false)}
+                    className={`flex flex-col items-center justify-center p-3.5 rounded-xl border transition-all cursor-pointer ${
+                      isActive("/ai-settings")
+                        ? "bg-amber-500/15 border-amber-500/40 text-amber-400"
+                        : "border-amber-500/20 bg-amber-500/5 text-amber-400 hover:bg-amber-500/10"
+                    }`}
+                  >
+                    <Bot className="w-5 h-5" strokeWidth={1.8} />
+                    <span className="text-[11px] mt-2 font-semibold">AI Settings</span>
+                  </Link>
+                  <Link
+                    to="/admin"
+                    onClick={() => setDrawerOpen(false)}
+                    className={`flex flex-col items-center justify-center p-3.5 rounded-xl border transition-all cursor-pointer ${
+                      isActive("/admin")
+                        ? "bg-amber-500/15 border-amber-500/40 text-amber-400"
+                        : "border-amber-500/20 bg-amber-500/5 text-amber-400 hover:bg-amber-500/10"
+                    }`}
+                  >
+                    <Shield className="w-5 h-5" strokeWidth={1.8} />
+                    <span className="text-[11px] mt-2 font-semibold">Admin</span>
+                  </Link>
+                </>
               )}
             </div>
 
