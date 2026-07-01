@@ -53,6 +53,7 @@ export const FloatingAiAssistant: React.FC = () => {
   const ctx: FinancialContext = {
     profile, accounts, transactions, investments, emis, goals,
   };
+  const userId = user?.id || '';
 
   // Tool executor — runs actual DB operations
   const handleToolCall = useCallback(async (name: string, args: any): Promise<string> => {
@@ -118,17 +119,16 @@ export const FloatingAiAssistant: React.FC = () => {
     setIsThinking(true);
 
     try {
-      const reply = await chatWithAI(newHistory, ctx, handleToolCall);
+      const reply = await chatWithAI(newHistory, ctx, handleToolCall, userId);
       setMessages(prev => [...prev.slice(0, -1), { role: 'assistant', text: reply }]);
       setHistory(prev => [...prev, { role: 'assistant', content: reply }]);
     } catch (e: any) {
-      const msg: string = e?.message || '';
-      const errMsg = msg.includes('insufficient_quota') || msg.includes('quota')
-        ? 'Quota exceeded — check your Gemini API key at aistudio.google.com.'
-        : msg.includes('429')
+      const errMsg = msg.includes('VITE_AI_WORKER_URL')
+        ? 'Worker not configured. Add VITE_AI_WORKER_URL to .env.'
+        : msg.includes('All AI providers failed')
+        ? 'All AI providers failed — add API keys in AI Settings.'
+        : msg.includes('429') || msg.includes('Too many')
         ? 'Rate limit hit. Wait a moment and try again.'
-        : msg.includes('401') || msg.includes('403')
-        ? 'Invalid API key — update VITE_GEMINI_API_KEY in .env.'
         : `Error: ${msg}`;
       setError(errMsg);
       setMessages(prev => prev.slice(0, -1));

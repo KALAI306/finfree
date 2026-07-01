@@ -12,6 +12,7 @@ import { Goals } from "./pages/Goals";
 import { RulesDashboard } from "./pages/RulesDashboard";
 import { Reports } from "./pages/Reports";
 import { Settings } from "./pages/Settings";
+import { AISettings } from "./pages/AISettings";
 import { Accounts } from "./pages/Accounts";
 import { AdminPanel } from "./pages/AdminPanel";
 import { ResetPassword } from "./pages/ResetPassword";
@@ -76,6 +77,7 @@ const AppContent: React.FC = () => {
               <Route path="/rules" element={<RulesDashboard />} />
               <Route path="/reports" element={<Reports />} />
               <Route path="/settings" element={<Settings />} />
+              <Route path="/ai-settings" element={<AISettings />} />
               <Route path="/admin" element={<AdminPanel />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>

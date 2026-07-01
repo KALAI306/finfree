@@ -1,331 +1,209 @@
-import type { Profile, Account, Transaction, Investment, EMI, Goal } from "./db";
+/**
+ * FinFree AI — Worker Client
+ * All AI calls now route through the Cloudflare Worker.
+ * API key is stored securely in Wrangler secrets — never exposed to the browser.
+ */
 
-const API_KEY  = import.meta.env.VITE_GEMINI_API_KEY as string;
-const MODEL    = "gemini-2.0-flash";
-const BASE_URL = import.meta.env.DEV
-  ? `/api/gemini/v1beta/models/${MODEL}`
-  : `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}`;
+import type { Profile, Account, Transaction, Investment, EMI, Goal } from './db';
 
-// ─── Types ────────────────────────────────────────────────────────────────────
+// ── Config ─────────────────────────────────────────────────────────────────
+
+const WORKER_URL = import.meta.env.VITE_AI_WORKER_URL as string || '';
 
 export interface ChatMessage {
-  role: "system" | "user" | "assistant" | "tool";
-  content: string | null;
-  tool_call_id?: string;
-  tool_calls?: ToolCall[];
-  name?: string;
-}
-
-export interface ToolCall {
-  id: string;
-  type: "function";
-  function: { name: string; arguments: string };
+  role: 'user' | 'assistant';
+  content: string;
 }
 
 export interface FinancialContext {
-  profile: Profile | null;
-  accounts: Account[];
+  profile:      Profile | null;
+  accounts:     Account[];
   transactions: Transaction[];
-  investments: Investment[];
-  emis: EMI[];
-  goals: Goal[];
+  investments:  Investment[];
+  emis:         EMI[];
+  goals:        Goal[];
 }
 
-// ─── System prompt ────────────────────────────────────────────────────────────
-
-export function buildSystemPrompt(ctx: FinancialContext): string {
-  const p   = ctx.profile;
-  const now = new Date();
-  const cm  = now.getMonth();
-  const cy  = now.getFullYear();
-
-  const monthTxs  = ctx.transactions.filter(t => { const d = new Date(t.date); return d.getMonth() === cm && d.getFullYear() === cy; });
-  const monthInc  = monthTxs.filter(t => t.type === "income").reduce((s, t) => s + Number(t.amount), 0);
-  const monthExp  = monthTxs.filter(t => t.type === "expense").reduce((s, t) => s + Number(t.amount), 0);
-  const totBal    = ctx.accounts.reduce((s, a) => s + Number(a.balance), 0);
-  const totEmi    = ctx.emis.reduce((s, e) => s + Number(e.emi_amount), 0);
-  const salary    = p ? Number(p.monthly_salary) : 0;
-
-  return `You are FinFree AI — a sharp, friendly personal finance assistant built into the FinFree app (India-focused).
-
-## User's Financial Snapshot
-- Name: ${p?.name || "User"} | Age: ${p?.age || "?"}
-- Monthly Salary: ₹${salary.toLocaleString("en-IN")}
-- Family Debt: ₹${Number(p?.family_debt || 0).toLocaleString("en-IN")}
-- Freedom Target: ₹${Number(p?.freedom_target || 0).toLocaleString("en-IN")} by age ${p?.target_freedom_age || "?"}
-
-## This Month (${now.toLocaleString("en-IN", { month: "long", year: "numeric" })})
-- Income: ₹${monthInc.toLocaleString("en-IN")} | Expenses: ₹${monthExp.toLocaleString("en-IN")} | Saved: ₹${(monthInc - monthExp).toLocaleString("en-IN")}
-
-## Accounts (₹${totBal.toLocaleString("en-IN")} total)
-${ctx.accounts.map(a => `- ${a.name} [${a.id}]: ₹${Number(a.balance).toLocaleString("en-IN")}`).join("\n") || "None"}
-
-## EMIs — ₹${totEmi.toLocaleString("en-IN")}/mo (${salary > 0 ? ((totEmi / salary) * 100).toFixed(1) : 0}% of salary)
-${ctx.emis.map(e => `- ${e.name}: ₹${Number(e.emi_amount).toLocaleString("en-IN")}/mo`).join("\n") || "None"}
-
-## Goals
-${ctx.goals.map(g => `- ${g.name} [${g.id}]: ₹${Number(g.current_amount).toLocaleString("en-IN")} / ₹${Number(g.target_amount).toLocaleString("en-IN")}`).join("\n") || "None"}
-
-## Recent Transactions (last 20)
-${ctx.transactions.slice(0, 20).map(t => `- ${t.date} | ${t.type === "income" ? "+" : "-"}₹${Number(t.amount).toLocaleString("en-IN")} | ${t.category} | ${t.note}`).join("\n") || "None"}
-
-## Rules
-- Always use real numbers from the snapshot. Never make up figures.
-- Be concise, direct, Indian-context-aware (₹, lakhs, crores).
-- When adding/creating/updating something, use the available tools.
-- Confirm clearly when an action is done.`;
+export interface ToolCall {
+  name: string;
+  args: Record<string, any>;
 }
 
-// ─── Tool definitions (Gemini native format) ──────────────────────────────────
+// ── Core worker caller ──────────────────────────────────────────────────────
 
-const FUNCTION_DECLARATIONS = [
-  {
-    name: "add_transaction",
-    description: "Add a new income or expense transaction for the user",
-    parameters: {
-      type: "OBJECT",
-      properties: {
-        account_id: { type: "STRING", description: "Account ID to use. Use the first account if unsure." },
-        type:       { type: "STRING", enum: ["income", "expense"] },
-        amount:     { type: "NUMBER", description: "Amount in rupees" },
-        category:   { type: "STRING", description: "e.g. Food 🍕, Salary 💼, Fuel ⛽, Shopping 🛍️, Healthcare 🏥, Miscellaneous 🎯" },
-        note:       { type: "STRING", description: "Short description" },
-        date:       { type: "STRING", description: "YYYY-MM-DD. Use today if not specified." },
-      },
-      required: ["account_id", "type", "amount", "category", "note", "date"],
-    },
-  },
-  {
-    name: "add_goal",
-    description: "Create a new savings goal",
-    parameters: {
-      type: "OBJECT",
-      properties: {
-        name:           { type: "STRING" },
-        target_amount:  { type: "NUMBER" },
-        current_amount: { type: "NUMBER" },
-        deadline:       { type: "STRING", description: "YYYY-MM-DD (optional)" },
-      },
-      required: ["name", "target_amount"],
-    },
-  },
-  {
-    name: "update_goal_progress",
-    description: "Add money to an existing savings goal",
-    parameters: {
-      type: "OBJECT",
-      properties: {
-        goal_id:    { type: "STRING" },
-        add_amount: { type: "NUMBER" },
-      },
-      required: ["goal_id", "add_amount"],
-    },
-  },
-  {
-    name: "get_spending_breakdown",
-    description: "Get spending breakdown by category for a month",
-    parameters: {
-      type: "OBJECT",
-      properties: {
-        month: { type: "NUMBER", description: "1-12, defaults to current" },
-        year:  { type: "NUMBER", description: "e.g. 2026" },
-      },
-      required: [],
-    },
-  },
-];
-
-// ─── Gemini message converters ────────────────────────────────────────────────
-
-function toGeminiContents(messages: ChatMessage[]): any[] {
-  const contents: any[] = [];
-
-  for (const msg of messages) {
-    if (msg.role === "system") continue; // handled via systemInstruction
-
-    if (msg.role === "user") {
-      contents.push({ role: "user", parts: [{ text: msg.content || "" }] });
-
-    } else if (msg.role === "assistant") {
-      const parts: any[] = [];
-      if (msg.content) parts.push({ text: msg.content });
-      if (msg.tool_calls?.length) {
-        msg.tool_calls.forEach(tc => parts.push({
-          functionCall: { name: tc.function.name, args: JSON.parse(tc.function.arguments) }
-        }));
-      }
-      contents.push({ role: "model", parts: parts.length ? parts : [{ text: "" }] });
-
-    } else if (msg.role === "tool") {
-      contents.push({
-        role: "user",
-        parts: [{ functionResponse: { name: msg.name || "", response: { content: msg.content || "" } } }],
-      });
-    }
+async function callWorker(endpoint: string, payload: Record<string, any>, userId?: string): Promise<any> {
+  if (!WORKER_URL) {
+    throw new Error('VITE_AI_WORKER_URL is not set. Please configure it in your .env file.');
   }
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (userId) headers['X-User-ID'] = userId;
 
-  return contents;
-}
-
-// ─── Core API call ────────────────────────────────────────────────────────────
-
-async function callGemini(
-  messages: ChatMessage[],
-  useTools = true,
-  retries = 2
-): Promise<{ content: string | null; tool_calls?: ToolCall[] }> {
-  const systemMsg = messages.find(m => m.role === "system");
-  const rest      = messages.filter(m => m.role !== "system");
-
-  const body: any = {
-    contents: toGeminiContents(rest),
-    generationConfig: { maxOutputTokens: 1024, temperature: 0.7 },
-  };
-  if (systemMsg?.content) {
-    body.systemInstruction = { parts: [{ text: systemMsg.content }] };
-  }
-  if (useTools) {
-    body.tools      = [{ functionDeclarations: FUNCTION_DECLARATIONS }];
-    body.toolConfig = { functionCallingConfig: { mode: "AUTO" } };
-  }
-
-  for (let attempt = 0; attempt <= retries; attempt++) {
-    const res = await fetch(`${BASE_URL}:generateContent?key=${API_KEY}`, {
-      method:  "POST",
-      headers: { "Content-Type": "application/json" },
-      body:    JSON.stringify(body),
-    });
-
-    if (res.status === 429) {
-      if (attempt < retries) {
-        await new Promise(r => setTimeout(r, 4000 * (attempt + 1)));
-        continue;
-      }
-      const err = await res.text();
-      throw new Error(`429: ${err}`);
-    }
-
-    if (!res.ok) {
-      const err = await res.text();
-      throw new Error(`Gemini ${res.status}: ${err}`);
-    }
-
-    const data      = await res.json();
-    const parts     = data.candidates?.[0]?.content?.parts ?? [];
-    let text        = "";
-    const toolCalls: ToolCall[] = [];
-
-    for (const part of parts) {
-      if (part.text) text += part.text;
-      if (part.functionCall) {
-        toolCalls.push({
-          id:   `call_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
-          type: "function",
-          function: { name: part.functionCall.name, arguments: JSON.stringify(part.functionCall.args) },
-        });
-      }
-    }
-
-    return { content: text || null, tool_calls: toolCalls.length ? toolCalls : undefined };
-  }
-
-  throw new Error("Max retries exceeded");
-}
-
-// ─── Spending breakdown (local) ───────────────────────────────────────────────
-
-export function computeSpendingBreakdown(transactions: Transaction[], month?: number, year?: number): string {
-  const now = new Date();
-  const m   = (month ?? now.getMonth() + 1) - 1;
-  const y   = year ?? now.getFullYear();
-
-  const filtered = transactions.filter(t => {
-    const d = new Date(t.date);
-    return t.type === "expense" && d.getMonth() === m && d.getFullYear() === y;
+  const res = await fetch(`${WORKER_URL}/api/${endpoint}`, {
+    method:  'POST',
+    headers,
+    body:    JSON.stringify(payload),
   });
 
-  const breakdown: Record<string, number> = {};
-  for (const t of filtered) {
-    const cat = t.category.replace(/[^\x00-\x7F]/g, "").trim() || "Other";
-    breakdown[cat] = (breakdown[cat] || 0) + Number(t.amount);
+  const data = await res.json();
+  if (!res.ok || !data.ok) {
+    throw new Error(data.error || `Worker error ${res.status}`);
   }
-
-  const total  = Object.values(breakdown).reduce((s, v) => s + v, 0);
-  const sorted = Object.entries(breakdown).sort((a, b) => b[1] - a[1]);
-  if (!sorted.length) return "No expenses recorded for that period.";
-
-  return `Spending breakdown:\nTotal: ₹${total.toLocaleString("en-IN")}\n` +
-    sorted.map(([c, a]) => `- ${c}: ₹${a.toLocaleString("en-IN")} (${((a / total) * 100).toFixed(1)}%)`).join("\n");
+  return data;
 }
 
-// ─── Main chat loop ───────────────────────────────────────────────────────────
+// ── Main chat function ──────────────────────────────────────────────────────
+// Returns either a plain text reply or a tool_call for client-side execution.
 
 export async function chatWithAI(
   history: ChatMessage[],
   ctx: FinancialContext,
-  onToolCall: (name: string, args: any) => Promise<string>
+  onToolCall: (name: string, args: any) => Promise<string>,
+  userId?: string,
 ): Promise<string> {
-  const systemMsg: ChatMessage = { role: "system", content: buildSystemPrompt(ctx) };
-  const messages: ChatMessage[] = [systemMsg, ...history];
+  const lastUserMsg = [...history].reverse().find(m => m.role === 'user')?.content || '';
 
-  let result = await callGemini(messages);
+  const data = await callWorker('chat', {
+    query:    lastUserMsg,
+    ctx,
+    userId:   userId || '',
+    messages: history.slice(0, -1), // send history excluding last user msg (sent as query)
+  }, userId);
 
-  for (let round = 0; round < 3 && result.tool_calls?.length; round++) {
-    const assistantMsg: ChatMessage = {
-      role: "assistant", content: result.content, tool_calls: result.tool_calls,
-    };
-    messages.push(assistantMsg);
-
-    for (const tc of result.tool_calls) {
-      let toolResult: string;
-      try {
-        const args = JSON.parse(tc.function.arguments);
-        toolResult = tc.function.name === "get_spending_breakdown"
-          ? computeSpendingBreakdown(ctx.transactions, args.month, args.year)
-          : await onToolCall(tc.function.name, args);
-      } catch (e: any) {
-        toolResult = `Error: ${e.message}`;
-      }
-      messages.push({ role: "tool", tool_call_id: tc.id, content: toolResult, name: tc.function.name });
+  // Worker returned a DB-write tool call → execute client-side
+  if (data.tool_call) {
+    const tc: ToolCall = data.tool_call;
+    let toolResult: string;
+    try {
+      toolResult = await onToolCall(tc.name, tc.args);
+    } catch (e: any) {
+      toolResult = `Error executing ${tc.name}: ${e.message}`;
     }
 
-    result = await callGemini(messages, false);
+    // Send tool result back for final AI response
+    const finalData = await callWorker('chat', {
+      query:    `[Tool result for ${tc.name}]: ${toolResult}. Now give the user a friendly confirmation.`,
+      ctx,
+      userId:   userId || '',
+      messages: history,
+    }, userId);
+
+    return finalData.reply || `Done: ${toolResult}`;
   }
 
-  return result.content || "Sorry, I couldn't generate a response.";
+  return data.reply || "Sorry, I couldn't generate a response.";
 }
 
-// ─── PDF / Statement parser ───────────────────────────────────────────────────
+// ── Statement parser ────────────────────────────────────────────────────────
 
 export interface ParsedAITransaction {
-  date: string;
-  amount: number;
-  type: "income" | "expense";
-  note: string;
+  date:     string;
+  amount:   number;
+  type:     'income' | 'expense';
+  note:     string;
   category: string;
 }
 
-export async function parseStatementWithAI(statementText: string): Promise<ParsedAITransaction[]> {
-  const prompt = `You are a bank statement parser for Indian banks. Extract ALL transactions from the text below and return ONLY a valid JSON array. Each object must have:
-- date: "YYYY-MM-DD"
-- amount: number (positive)
-- type: "income" or "expense" (credit = income, debit = expense)
-- note: short description
-- category: one of ["Salary 💼","Food 🍕","Fuel ⛽","Rent/PG 🏠","Healthcare 🏥","Shopping 🛍️","Recharges 📱","Gold Investment 🥇","Daily Workers 👷","EMI 💳","Transfer 💸","Cash Withdrawal 💸","Other Income 🎁","Miscellaneous 🎯"]
+export async function parseStatementWithAI(
+  statementText: string,
+  userId?: string,
+): Promise<ParsedAITransaction[]> {
+  const data = await callWorker('parse-statement', {
+    statement_text: statementText,
+    userId: userId || '',
+  }, userId);
 
-Rules: UPI credits/NEFT/salary = income. UPI debits/withdrawals/purchases = expense. If year missing use 2026. Return [] if none found. Return ONLY the JSON array, no explanation.
+  return Array.isArray(data.transactions) ? data.transactions : [];
+}
 
-Bank statement:
-${statementText.slice(0, 8000)}`;
+// ── Settings API ────────────────────────────────────────────────────────────
 
-  const messages: ChatMessage[] = [{ role: "user", content: prompt }];
-  const result = await callGemini(messages, false);
-  const text   = result.content || "[]";
+export interface AISettings {
+  ai_provider:         string;
+  ai_gemini_model:     string;
+  ai_groq_model:       string;
+  ai_hf_model:         string;
+  ai_openrouter_model: string;
+  ai_key_gemini_1:     string;
+  ai_key_gemini_2:     string;
+  ai_key_gemini_3:     string;
+  ai_key_groq_1:       string;
+  ai_key_hf_1:         string;
+  ai_key_openrouter_1: string;
+  ai_persona:          string;
+  [key: string]: string;
+}
 
+export async function fetchAISettings(): Promise<AISettings> {
+  if (!WORKER_URL) throw new Error('VITE_AI_WORKER_URL not set');
+  const res  = await fetch(`${WORKER_URL}/api/settings`);
+  const data = await res.json();
+  return data.settings || {};
+}
+
+export async function updateAISetting(key: string, value: string): Promise<void> {
+  if (!WORKER_URL) throw new Error('VITE_AI_WORKER_URL not set');
+  await fetch(`${WORKER_URL}/api/settings`, {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body:    JSON.stringify({ key, value }),
+  });
+}
+
+// ── Logs API ────────────────────────────────────────────────────────────────
+
+export interface AIUsageLog {
+  id:                string;
+  endpoint:          string;
+  user_id:           string;
+  provider:          string;
+  model:             string;
+  prompt_tokens:     number;
+  completion_tokens: number;
+  total_tokens:      number;
+  latency_ms:        number;
+  success:           number;
+  created_at:        string;
+}
+
+export async function fetchAILogs(limit = 100): Promise<AIUsageLog[]> {
+  if (!WORKER_URL) throw new Error('VITE_AI_WORKER_URL not set');
+  const res  = await fetch(`${WORKER_URL}/api/logs?limit=${limit}`);
+  const data = await res.json();
+  return data.logs || [];
+}
+
+// ── Memory API ──────────────────────────────────────────────────────────────
+
+export interface AIMemoryItem {
+  id:         string;
+  memory:     string;
+  created_at: string;
+}
+
+export async function fetchAIMemory(userId: string): Promise<AIMemoryItem[]> {
+  if (!WORKER_URL || !userId) return [];
+  const res  = await fetch(`${WORKER_URL}/api/memory`, { headers: { 'X-User-ID': userId } });
+  const data = await res.json();
+  return data.memory || [];
+}
+
+export async function clearAIMemory(userId: string): Promise<void> {
+  if (!WORKER_URL || !userId) return;
+  await fetch(`${WORKER_URL}/api/memory`, {
+    method:  'DELETE',
+    headers: { 'X-User-ID': userId },
+  });
+}
+
+// ── Health API ──────────────────────────────────────────────────────────────
+
+export async function fetchAIHealth(): Promise<{ status: string; total_ai_calls: number; keys_configured: number }> {
+  if (!WORKER_URL) return { status: 'unconfigured', total_ai_calls: 0, keys_configured: 0 };
   try {
-    const match = text.match(/\[[\s\S]*\]/);
-    return match ? JSON.parse(match[0]) : [];
+    const res  = await fetch(`${WORKER_URL}/api/health`);
+    const data = await res.json();
+    return data;
   } catch {
-    return [];
+    return { status: 'offline', total_ai_calls: 0, keys_configured: 0 };
   }
 }

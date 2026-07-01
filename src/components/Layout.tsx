@@ -21,6 +21,7 @@ import {
   Settings,
   Palette,
   Shield,
+  Bot,
 } from "lucide-react";
 import { FloatingAiAssistant } from "./ui/glowing-ai-chat-assistant";
 import { WelcomeTour } from "./WelcomeTour";
@@ -43,6 +44,7 @@ const navItems = [
   { path: "/goals",      label: "Goals",       icon: Target     },
   { path: "/rules",      label: "Rules",       icon: ShieldCheck },
   { path: "/reports",    label: "Reports",     icon: BarChart3  },
+  { path: "/ai-settings", label: "AI Settings", icon: Bot       },
 ];
 
 // First 4 in bottom bar, rest in drawer
