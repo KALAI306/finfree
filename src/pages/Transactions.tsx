@@ -4,20 +4,22 @@ import { addTransaction, deleteTransaction, updateTransaction } from "../lib/db"
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
-import { 
-  Plus, 
-  Search, 
-  Calendar, 
-  ArrowUpRight, 
-  ArrowDownRight, 
-  ArrowRightLeft, 
+import {
+  Plus,
+  Search,
+  Calendar,
+  ArrowUpRight,
+  ArrowDownRight,
+  ArrowRightLeft,
   Trash2,
   Edit2,
   X,
-  FileText
+  FileText,
+  RefreshCw
 } from "lucide-react";
 import { Modal } from "../components/Modal";
 import { PdfParser } from "../components/PdfParser";
+import { CustomSelect, NumberInput } from "../components/CustomSelect";
 import type { Transaction } from "../lib/db";
 
 // Categories definitions
@@ -48,6 +50,26 @@ export const INCOME_CATEGORIES = [
   { name: "Investment Return 📈", icon: "📈" }
 ];
 
+const FREQUENCY_OPTIONS = [
+  { value: "Daily", label: "Daily", icon: "📅" },
+  { value: "Weekly", label: "Weekly", icon: "🗓️" },
+  { value: "Monthly", label: "Monthly", icon: "📆" },
+  { value: "Yearly", label: "Yearly", icon: "🗃️" },
+];
+
+// Helpers to encode/decode frequency in note field
+function encodeFreqInNote(note: string, freq: string): string {
+  // Remove any existing freq prefix
+  const stripped = note.replace(/^\[freq:[^\]]+\]\s*/, "");
+  return `[freq:${freq}] ${stripped}`.trimEnd();
+}
+
+function decodeFreqFromNote(note: string): { freq: string | null; cleanNote: string } {
+  const match = note?.match(/^\[freq:([^\]]+)\]\s*(.*)/s);
+  if (match) return { freq: match[1], cleanNote: match[2] };
+  return { freq: null, cleanNote: note || "" };
+}
+
 // Zod Schema
 const transactionSchema = z.object({
   type: z.enum(["income", "expense", "transfer"]),
@@ -71,7 +93,7 @@ const transactionSchema = z.object({
 type TransactionFormValues = z.infer<typeof transactionSchema>;
 
 // Form Component
-export const TransactionForm: React.FC<{ 
+export const TransactionForm: React.FC<{
   onClose: () => void;
   transaction?: Transaction;
 }> = ({ onClose, transaction }) => {
@@ -86,6 +108,14 @@ export const TransactionForm: React.FC<{
   const [editCatName, setEditCatName] = useState("");
   const [editCatIcon, setEditCatIcon] = useState("");
 
+  // Recurring frequency state — decode from existing note if editing
+  const existingNote = transaction?.note || "";
+  const { freq: existingFreq, cleanNote: existingCleanNote } = decodeFreqFromNote(existingNote);
+  const [recurringFreq, setRecurringFreq] = useState<string>(existingFreq || "Monthly");
+  const [amountStr, setAmountStr] = useState<string>(
+    transaction?.amount ? String(transaction.amount) : ""
+  );
+
   const { register, handleSubmit, setValue, watch, formState: { errors } } = useForm<any>({
     resolver: zodResolver(transactionSchema),
     defaultValues: {
@@ -93,16 +123,24 @@ export const TransactionForm: React.FC<{
       amount: transaction?.amount || "",
       account_id: transaction?.account_id || "",
       category: transaction?.category || "",
-      note: transaction?.note || "",
+      note: existingCleanNote,
       date: transaction?.date ? transaction.date.split("T")[0] : new Date().toISOString().split("T")[0],
       is_recurring: transaction?.is_recurring || false,
       transfer_to_account_id: transaction?.transfer_to_account_id || ""
     }
   });
 
+  const isRecurring = watch("is_recurring");
+  const watchedNote = watch("note");
+
   const onSubmit = async (data: any) => {
     if (!user) return;
     try {
+      // Encode frequency into note if recurring
+      const finalNote = data.is_recurring
+        ? encodeFreqInNote(data.note || "", recurringFreq)
+        : (data.note || "").replace(/^\[freq:[^\]]+\]\s*/, "");
+
       if (transaction) {
         await updateTransaction({
           id: transaction.id,
@@ -110,7 +148,7 @@ export const TransactionForm: React.FC<{
           type: data.type,
           amount: data.amount,
           category: data.category,
-          note: data.note,
+          note: finalNote,
           date: data.date,
           is_recurring: data.is_recurring,
           transfer_to_account_id: data.type === "transfer" ? data.transfer_to_account_id : null
@@ -123,7 +161,7 @@ export const TransactionForm: React.FC<{
           type: data.type,
           amount: data.amount,
           category: data.category,
-          note: data.note,
+          note: finalNote,
           date: data.date,
           is_recurring: data.is_recurring,
           transfer_to_account_id: data.type === "transfer" ? data.transfer_to_account_id : null
@@ -170,6 +208,21 @@ export const TransactionForm: React.FC<{
     });
   }
 
+  // Build account options for CustomSelect
+  const accountOptions = accounts.map(a => ({
+    value: a.id,
+    label: `${a.name} (${formatIndianCurrency(a.balance)})`,
+    icon: "🏦"
+  }));
+
+  const toAccountOptions = accounts
+    .filter(a => a.id !== originAccount)
+    .map(a => ({
+      value: a.id,
+      label: `${a.name} (${formatIndianCurrency(a.balance)})`,
+      icon: "🏦"
+    }));
+
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
       {/* Type Selector */}
@@ -197,59 +250,40 @@ export const TransactionForm: React.FC<{
         </div>
       </div>
 
-      {/* Amount input */}
-      <div>
-        <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider block mb-1">Amount (₹)</label>
-        <input
-          type="number"
-          step="any"
-          placeholder="0.00"
-          {...register("amount")}
-          className="w-full bg-background border border-border rounded-xl py-2.5 px-3 text-foreground text-sm focus:outline-none focus:border-primary"
-        />
-        {errors.amount && <p className="text-rose-400 text-xs mt-1">{getErrorMessage(errors.amount)}</p>}
-      </div>
+      {/* Amount input — NumberInput with ₹ prefix */}
+      <NumberInput
+        label="Amount (₹)"
+        value={amountStr}
+        onChange={(val) => {
+          setAmountStr(val);
+          setValue("amount", val === "" ? "" : Number(val));
+        }}
+        decimals
+        prefix="₹"
+        placeholder="0.00"
+        error={getErrorMessage(errors.amount)}
+      />
 
-      {/* Account selection */}
+      {/* Account selection — CustomSelect */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div>
-          <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider block mb-1">
-            {selectedType === "transfer" ? "From Account" : "Account"}
-          </label>
-          <select
-            {...register("account_id")}
-            className="w-full bg-background border border-border rounded-xl py-2.5 px-3 text-foreground text-sm focus:outline-none focus:border-primary"
-          >
-            <option value="">Select Account</option>
-            {accounts.map((a) => (
-              <option key={a.id} value={a.id}>
-                {a.name} ({formatIndianCurrency(a.balance)})
-              </option>
-            ))}
-          </select>
-          {errors.account_id && <p className="text-rose-400 text-xs mt-1">{getErrorMessage(errors.account_id)}</p>}
-        </div>
+        <CustomSelect
+          label={selectedType === "transfer" ? "From Account" : "Account"}
+          options={accountOptions}
+          value={watch("account_id") || ""}
+          onChange={(val) => setValue("account_id", val)}
+          placeholder="Select Account"
+          error={getErrorMessage(errors.account_id)}
+        />
 
         {selectedType === "transfer" && (
-          <div>
-            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider block mb-1">To Account</label>
-            <select
-              {...register("transfer_to_account_id")}
-              className="w-full bg-background border border-border rounded-xl py-2.5 px-3 text-foreground text-sm focus:outline-none focus:border-primary"
-            >
-              <option value="">Select Account</option>
-              {accounts
-                .filter(a => a.id !== originAccount)
-                .map((a) => (
-                  <option key={a.id} value={a.id}>
-                    {a.name} ({formatIndianCurrency(a.balance)})
-                  </option>
-                ))}
-            </select>
-            {errors.transfer_to_account_id && (
-              <p className="text-rose-400 text-xs mt-1">{getErrorMessage(errors.transfer_to_account_id)}</p>
-            )}
-          </div>
+          <CustomSelect
+            label="To Account"
+            options={toAccountOptions}
+            value={watch("transfer_to_account_id") || ""}
+            onChange={(val) => setValue("transfer_to_account_id", val)}
+            placeholder="Select Account"
+            error={getErrorMessage(errors.transfer_to_account_id)}
+          />
         )}
       </div>
 
@@ -257,7 +291,7 @@ export const TransactionForm: React.FC<{
       {selectedType !== "transfer" && (
         <div>
           <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider block mb-2">Category</label>
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 max-h-36 overflow-y-auto p-1 bg-background border border-border rounded-xl">
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 max-h-48 overflow-y-auto p-1 bg-background border border-border rounded-xl">
             {displayedCategories.map((cat) => {
               const currentCat = watch("category");
               const isCustom = customCats.some(c => c.name === cat.name);
@@ -266,7 +300,7 @@ export const TransactionForm: React.FC<{
                   <button
                     type="button"
                     onClick={() => setValue("category", cat.name)}
-                    className={`w-full flex items-center gap-2 p-2 rounded-lg text-xs font-semibold transition-all border text-left ${
+                    className={`w-full flex items-center gap-2 p-2 min-h-[48px] rounded-lg text-[14px] font-semibold transition-all border text-left ${
                       currentCat === cat.name
                         ? "bg-primary/15 text-primary border-primary/30"
                         : "bg-transparent text-muted-foreground border-transparent hover:bg-muted"
@@ -289,7 +323,7 @@ export const TransactionForm: React.FC<{
             <button
               type="button"
               onClick={() => setShowAddCustomCat(true)}
-              className="flex items-center justify-center gap-1.5 p-2 rounded-lg text-xs font-semibold border border-dashed border-border text-muted-foreground hover:text-foreground hover:border-primary transition-all bg-muted/30"
+              className="flex items-center justify-center gap-1.5 p-2 min-h-[48px] rounded-lg text-xs font-semibold border border-dashed border-border text-muted-foreground hover:text-foreground hover:border-primary transition-all bg-muted/30"
             >
               <Plus className="w-3 h-3" />
               <span>Custom...</span>
@@ -377,14 +411,14 @@ export const TransactionForm: React.FC<{
         </div>
       )}
 
-      {/* Date & Note & Recurring */}
+      {/* Date & Note */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div>
           <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider block mb-1">Date</label>
           <input
             type="date"
             {...register("date")}
-            className="w-full bg-background border border-border rounded-xl py-2.5 px-3 text-foreground text-sm focus:outline-none focus:border-primary"
+            className="w-full bg-background border border-border rounded-xl min-h-[48px] py-3 px-3.5 text-foreground text-sm focus:outline-none focus:border-primary"
           />
           {errors.date && <p className="text-rose-400 text-xs mt-1">{getErrorMessage(errors.date)}</p>}
         </div>
@@ -395,21 +429,44 @@ export const TransactionForm: React.FC<{
             type="text"
             placeholder="E.g., Dinner with friends"
             {...register("note")}
-            className="w-full bg-background border border-border rounded-xl py-2.5 px-3 text-foreground text-sm focus:outline-none focus:border-primary"
+            className="w-full bg-background border border-border rounded-xl min-h-[48px] py-3 px-3.5 text-foreground text-sm focus:outline-none focus:border-primary"
           />
         </div>
       </div>
 
-      <div className="flex items-center gap-3 py-2">
-        <input
-          type="checkbox"
-          id="is_recurring"
-          {...register("is_recurring")}
-          className="w-4.5 h-4.5 rounded bg-background border-border text-gold-500 focus:ring-violet-500"
-        />
-        <label htmlFor="is_recurring" className="text-xs text-muted-foreground font-medium">
-          Set as recurring monthly transaction (SIP)
-        </label>
+      {/* Recurring toggle + frequency selector */}
+      <div className="space-y-3">
+        <div className="flex items-center gap-3 py-1">
+          {/* Toggle switch */}
+          <button
+            type="button"
+            onClick={() => setValue("is_recurring", !isRecurring)}
+            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none shrink-0 ${
+              isRecurring ? "bg-violet-500" : "bg-muted-foreground/30"
+            }`}
+            aria-pressed={isRecurring}
+          >
+            <span
+              className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
+                isRecurring ? "translate-x-6" : "translate-x-1"
+              }`}
+            />
+          </button>
+          <span className="text-xs text-muted-foreground font-medium">
+            Recurring: <span className={isRecurring ? "text-violet-400 font-semibold" : ""}>{isRecurring ? "On" : "Off"}</span>
+          </span>
+        </div>
+
+        {/* Frequency selector — only shown when recurring is on */}
+        {isRecurring && (
+          <CustomSelect
+            label="Frequency"
+            options={FREQUENCY_OPTIONS.map(f => ({ value: f.value, label: f.label, icon: f.icon }))}
+            value={recurringFreq}
+            onChange={setRecurringFreq}
+            placeholder="Select frequency"
+          />
+        )}
       </div>
 
       <div className="flex gap-3 mt-4 pt-4 border-t border-border">
@@ -449,6 +506,18 @@ export const Transactions: React.FC = () => {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkDeleting, setBulkDeleting] = useState(false);
 
+  // Filters state
+  const [activeTab, setActiveTab] = useState<"all" | "income" | "expense" | "transfer">("all");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [selectedAccount, setSelectedAccount] = useState("");
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
+
+  // #12 — Category and type filter pills
+  const [filterType, setFilterType] = useState("all");
+  const [filterAccount, setFilterAccount] = useState("all");
+  const [filterCategory, setFilterCategory] = useState("all");
+
   const toggleSelect = (id: string) => {
     setSelectedIds(prev => {
       const next = new Set(prev);
@@ -483,19 +552,18 @@ export const Transactions: React.FC = () => {
     }
   };
 
-  // Filters state
-  const [activeTab, setActiveTab] = useState<"all" | "income" | "expense" | "transfer">("all");
-  const [searchQuery, setSearchQuery] = useState("");
-  const [selectedAccount, setSelectedAccount] = useState("");
-  const [startDate, setStartDate] = useState("");
-  const [endDate, setEndDate] = useState("");
-
   const handleClearFilters = () => {
     setSearchQuery("");
     setSelectedAccount("");
     setStartDate("");
     setEndDate("");
+    setFilterType("all");
+    setFilterAccount("all");
+    setFilterCategory("all");
   };
+
+  // Gather unique categories for the filter pill
+  const allCategories = Array.from(new Set(transactions.map(t => t.category))).sort();
 
   // Filter logic
   const filteredTxs = transactions.filter((tx) => {
@@ -512,6 +580,11 @@ export const Transactions: React.FC = () => {
 
     if (startDate && new Date(tx.date) < new Date(startDate)) return false;
     if (endDate && new Date(tx.date) > new Date(endDate)) return false;
+
+    // #12 filter pills
+    if (filterType !== "all" && tx.type !== filterType) return false;
+    if (filterAccount !== "all" && tx.account_id !== filterAccount && tx.transfer_to_account_id !== filterAccount) return false;
+    if (filterCategory !== "all" && tx.category !== filterCategory) return false;
 
     return true;
   });
@@ -533,15 +606,44 @@ export const Transactions: React.FC = () => {
 
   const getTxIcon = (tx: any) => {
     if (tx.type === "transfer") return "💰";
-    
+
     const expenseMatch = EXPENSE_CATEGORIES.find(c => tx.category.includes(c.name.split(" ")[0]));
     if (expenseMatch) return expenseMatch.icon;
-    
+
     const incomeMatch = INCOME_CATEGORIES.find(c => tx.category.includes(c.name.split(" ")[0]));
     if (incomeMatch) return incomeMatch.icon;
-    
+
     return "🎯";
   };
+
+  // Helper to extract frequency badge text from a transaction
+  const getRecurringBadge = (tx: Transaction): string | null => {
+    if (!tx.is_recurring) return null;
+    const { freq } = decodeFreqFromNote(tx.note || "");
+    return freq || "Monthly";
+  };
+
+  // Check if any pill filters are active
+  const hasPillFilters = filterType !== "all" || filterAccount !== "all" || filterCategory !== "all";
+  const hasAnyFilter = searchQuery || selectedAccount || startDate || endDate || hasPillFilters;
+
+  // Build options for filter pills
+  const typeOptions = [
+    { value: "all", label: "All Types" },
+    { value: "income", label: "Income", icon: "↑" },
+    { value: "expense", label: "Expense", icon: "↓" },
+    { value: "transfer", label: "Transfer", icon: "⇄" },
+  ];
+
+  const accountFilterOptions = [
+    { value: "all", label: "All Accounts" },
+    ...accounts.map(a => ({ value: a.id, label: a.name, icon: "🏦" }))
+  ];
+
+  const categoryFilterOptions = [
+    { value: "all", label: "All Categories" },
+    ...allCategories.map(c => ({ value: c, label: stripCategoryEmoji(c), icon: getTxIcon({ category: c, type: "expense" }) }))
+  ];
 
   return (
     <div className="space-y-6">
@@ -622,19 +724,47 @@ export const Transactions: React.FC = () => {
               className="w-full bg-background border border-border rounded-xl py-2 pl-9 pr-4 text-foreground text-xs md:text-sm focus:outline-none focus:border-primary"
             />
           </div>
-          
-          {/* Account Filter */}
-          <select
-            value={selectedAccount}
-            onChange={(e) => setSelectedAccount(e.target.value)}
-            className="bg-background border border-border rounded-xl py-2 px-3 text-foreground text-xs md:text-sm focus:outline-none focus:border-primary"
-          >
-            <option value="">All Accounts</option>
-            {accounts.map(acc => (
-              <option key={acc.id} value={acc.id}>{acc.name}</option>
-            ))}
-          </select>
         </div>
+
+        {/* #12 — Filter pills row */}
+        <div className="flex flex-wrap gap-2 pt-1">
+          <CustomSelect
+            options={typeOptions}
+            value={filterType}
+            onChange={setFilterType}
+            placeholder="All Types"
+            className="min-w-[130px] flex-1 md:flex-none"
+          />
+          <CustomSelect
+            options={accountFilterOptions}
+            value={filterAccount}
+            onChange={setFilterAccount}
+            placeholder="All Accounts"
+            className="min-w-[140px] flex-1 md:flex-none"
+            searchable={accounts.length > 5}
+          />
+          <CustomSelect
+            options={categoryFilterOptions}
+            value={filterCategory}
+            onChange={setFilterCategory}
+            placeholder="All Categories"
+            className="min-w-[150px] flex-1 md:flex-none"
+            searchable={allCategories.length > 6}
+          />
+          {hasPillFilters && (
+            <button
+              onClick={() => { setFilterType("all"); setFilterAccount("all"); setFilterCategory("all"); }}
+              className="text-xs text-rose-500 hover:text-rose-400 font-semibold flex items-center gap-1 px-3 py-2 rounded-xl border border-rose-500/20 bg-rose-500/5 hover:bg-rose-500/10 transition-colors"
+            >
+              <X className="w-3 h-3" /> Clear Filters
+            </button>
+          )}
+        </div>
+
+        {/* Result count */}
+        <p className="text-[11px] text-muted-foreground">
+          Showing <span className="font-semibold text-foreground">{filteredTxs.length}</span> of {transactions.length} transactions
+        </p>
 
         {/* Date Filters Row */}
         <div className="flex flex-col md:flex-row items-end md:items-center gap-3 pt-2 border-t border-border">
@@ -656,12 +786,12 @@ export const Transactions: React.FC = () => {
             />
           </div>
 
-          {(searchQuery || selectedAccount || startDate || endDate) && (
+          {hasAnyFilter && (
             <button
               onClick={handleClearFilters}
               className="text-xs text-rose-500 hover:text-rose-605 font-semibold flex items-center gap-1 ml-auto transition-colors"
             >
-              <X className="w-3.5 h-3.5" /> Clear Filters
+              <X className="w-3.5 h-3.5" /> Clear All Filters
             </button>
           )}
         </div>
@@ -704,6 +834,7 @@ export const Transactions: React.FC = () => {
                 const toAccount = tx.transfer_to_account_id ? accounts.find(a => a.id === tx.transfer_to_account_id) : null;
                 const isIncome = tx.type === "income";
                 const isTransfer = tx.type === "transfer";
+                const recurringBadge = getRecurringBadge(tx);
 
                 return (
                   <div key={tx.id} className="flex justify-between items-center py-4 hover:bg-muted/30 transition-colors px-2 -mx-2 rounded-lg group">
@@ -715,20 +846,20 @@ export const Transactions: React.FC = () => {
                         className="w-4 h-4 rounded border-border text-primary shrink-0 cursor-pointer"
                       />
                       <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-lg shrink-0 ${
-                        isIncome 
-                          ? "bg-emerald-500/10 text-emerald-500 border border-emerald-500/20" 
-                          : isTransfer 
+                        isIncome
+                          ? "bg-emerald-500/10 text-emerald-500 border border-emerald-500/20"
+                          : isTransfer
                           ? "bg-amber-500/10 text-amber-500 border border-amber-500/20"
                           : "bg-rose-500/10 text-rose-500 border border-rose-500/20"
                       }`}>
                         {getTxIcon(tx)}
                       </div>
                       <div className="min-w-0">
-                        <div className="flex items-center gap-2">
-                          <p className="text-sm font-semibold text-foreground truncate m-0">{tx.note || tx.category}</p>
-                          {tx.is_recurring && (
-                            <span className="px-1.5 py-0.5 rounded bg-violet-500/15 border border-gold-500/20 text-[9px] text-gold-400 font-semibold">
-                              SIP
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <p className="text-sm font-semibold text-foreground truncate m-0">{tx.note ? decodeFreqFromNote(tx.note).cleanNote || tx.category : tx.category}</p>
+                          {recurringBadge && (
+                            <span className="px-1.5 py-0.5 rounded bg-violet-500/15 border border-violet-500/20 text-[9px] text-violet-400 font-semibold flex items-center gap-0.5">
+                              🔁 {recurringBadge}
                             </span>
                           )}
                         </div>
@@ -801,6 +932,7 @@ export const Transactions: React.FC = () => {
                     const toAccount = tx.transfer_to_account_id ? accounts.find(a => a.id === tx.transfer_to_account_id) : null;
                     const isIncome = tx.type === "income";
                     const isTransfer = tx.type === "transfer";
+                    const recurringBadge = getRecurringBadge(tx);
 
                     return (
                       <tr key={tx.id} className="hover:bg-muted/20 transition-colors group">
@@ -817,9 +949,9 @@ export const Transactions: React.FC = () => {
                         </td>
                         <td className="py-3.5 px-4 whitespace-nowrap">
                           <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
-                            isIncome 
-                              ? "bg-emerald-500/15 text-emerald-500 border border-emerald-500/20" 
-                              : isTransfer 
+                            isIncome
+                              ? "bg-emerald-500/15 text-emerald-500 border border-emerald-500/20"
+                              : isTransfer
                               ? "bg-amber-500/15 text-amber-500 border border-amber-500/20"
                               : "bg-rose-500/15 text-rose-500 border border-rose-500/20"
                           }`}>
@@ -827,13 +959,13 @@ export const Transactions: React.FC = () => {
                           </span>
                         </td>
                         <td className="py-3.5 px-4">
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-2 flex-wrap">
                             <span className="text-sm font-semibold text-foreground truncate max-w-[200px]" title={tx.note}>
-                              {tx.note || "-"}
+                              {tx.note ? decodeFreqFromNote(tx.note).cleanNote || "-" : "-"}
                             </span>
-                            {tx.is_recurring && (
-                              <span className="px-1.5 py-0.5 rounded bg-violet-500/15 border border-gold-500/20 text-[9px] text-gold-400 font-bold uppercase whitespace-nowrap">
-                                SIP
+                            {recurringBadge && (
+                              <span className="px-1.5 py-0.5 rounded bg-violet-500/15 border border-violet-500/20 text-[9px] text-violet-400 font-bold uppercase whitespace-nowrap flex items-center gap-0.5">
+                                🔁 {recurringBadge}
                               </span>
                             )}
                           </div>
@@ -895,12 +1027,12 @@ export const Transactions: React.FC = () => {
       {/* Edit Modal */}
       <Modal isOpen={editingTransaction !== null} onClose={() => setEditingTransaction(null)} title="Edit Transaction">
         {editingTransaction && (
-          <TransactionForm 
+          <TransactionForm
             transaction={editingTransaction}
             onClose={() => {
               setEditingTransaction(null);
               refreshData();
-            }} 
+            }}
           />
         )}
       </Modal>

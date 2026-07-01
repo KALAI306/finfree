@@ -13,6 +13,8 @@ export default {
       animation: {
         'fade-up': 'fadeUp 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards',
         'glow-pulse': 'glowPulse 3s ease-in-out infinite',
+        'slide-up': 'slideUp 0.32s cubic-bezier(0.16, 1, 0.3, 1) forwards',
+        'fade-in': 'fadeIn 0.2s ease forwards',
       },
       keyframes: {
         fadeUp: {
@@ -22,6 +24,14 @@ export default {
         glowPulse: {
           '0%, 100%': { opacity: '0.6' },
           '50%': { opacity: '1' },
+        },
+        slideUp: {
+          '0%': { opacity: '0', transform: 'translateY(100%)' },
+          '100%': { opacity: '1', transform: 'translateY(0)' },
+        },
+        fadeIn: {
+          '0%': { opacity: '0' },
+          '100%': { opacity: '1' },
         },
       },
       colors: {

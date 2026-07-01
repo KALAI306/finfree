@@ -1,19 +1,20 @@
 import React, { useState, useEffect } from "react";
 import { useApp } from "../context/AppContext";
 import { addEmi, updateEmi, deleteEmi, addTransaction } from "../lib/db";
-import { addMonths, format } from "date-fns";
-import { 
-  Plus, 
-  AlertTriangle, 
-  CheckCircle2, 
-  XCircle, 
-  Trash2, 
+import { addMonths, format, differenceInDays } from "date-fns";
+import {
+  Plus,
+  AlertTriangle,
+  CheckCircle2,
+  XCircle,
+  Trash2,
   Edit2,
-  Sparkles, 
+  Sparkles,
   CalendarDays,
   Coins,
   TrendingDown,
-  Info
+  Info,
+  ChevronDown,
 } from "lucide-react";
 import { Modal } from "../components/Modal";
 import { useForm } from "react-hook-form";
@@ -21,6 +22,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from "recharts";
 import type { EMI } from "../lib/db";
+import { CustomSelect, NumberInput } from "../components/CustomSelect";
 
 // Zod schema for EMI validation
 const emiSchema = z.object({
@@ -40,11 +42,18 @@ export const EmiManager: React.FC = () => {
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [editingEmi, setEditingEmi] = useState<EMI | null>(null);
 
+  // Pay-EMI account selector state (#5)
+  const [payingEmiId, setPayingEmiId] = useState<string | null>(null);
+  const [payFromAccount, setPayFromAccount] = useState<string>("");
+
   // Downpayment Calculator States
   const [assetPrice, setAssetPrice] = useState(500000);
   const [downpayment, setDownpayment] = useState(100000);
   const [interestRate, setInterestRate] = useState(8.5);
   const [tenureMonths, setTenureMonths] = useState(60);
+
+  // Prepayment Calculator state (#6)
+  const [extraPayment, setExtraPayment] = useState(1000);
 
   // Auto limit downpayment to asset price
   useEffect(() => {
@@ -56,7 +65,7 @@ export const EmiManager: React.FC = () => {
   // Downpayment Planner calculations
   const plannerPrincipal = Math.max(0, assetPrice - downpayment);
   const plannerR = interestRate / 100 / 12;
-  
+
   let plannerEmi = 0;
   if (plannerPrincipal > 0) {
     if (plannerR > 0) {
@@ -66,14 +75,14 @@ export const EmiManager: React.FC = () => {
     }
   }
   plannerEmi = Math.round(plannerEmi);
-  
+
   const plannerTotalPayment = plannerEmi * tenureMonths;
   const plannerTotalInterest = Math.max(0, plannerTotalPayment - plannerPrincipal);
 
   // Alternative Scenario (increase downpayment by ₹50,000)
   const altDownpayment = Math.min(assetPrice, downpayment + 50000);
   const altPrincipal = Math.max(0, assetPrice - altDownpayment);
-  
+
   let altEmi = 0;
   if (altPrincipal > 0) {
     if (plannerR > 0) {
@@ -91,7 +100,7 @@ export const EmiManager: React.FC = () => {
 
   const plannerPieData = [
     { name: "Principal Loan Amount", value: plannerPrincipal, color: "#8B5CF6" },
-    { name: "Total Interest Cost", value: plannerTotalInterest, color: "#F59E0B" }
+    { name: "Total Interest Cost", value: plannerTotalInterest, color: "#F59E0B" },
   ];
 
   // Math for existing loans
@@ -144,20 +153,91 @@ export const EmiManager: React.FC = () => {
     };
   };
 
-  const handlePayEmi = async (emi: any) => {
-    const sbiAccount = accounts.find(a => a.name.toLowerCase() === "sbi");
-    if (!sbiAccount) {
-      showToast("Cannot auto-deduct. No SBI savings account found.", "warning");
+  // #7 — Next due date helpers
+  const getNextDueDate = (emi: any) => {
+    const start = new Date(emi.start_date);
+    return addMonths(start, Number(emi.paid_months) + 1);
+  };
+
+  const getDueBadgeStyle = (dueDate: Date) => {
+    const daysUntil = differenceInDays(dueDate, new Date());
+    if (daysUntil <= 5) return "bg-rose-500/15 border-rose-500/25 text-rose-500";
+    if (daysUntil <= 10) return "bg-amber-500/15 border-amber-500/25 text-amber-500";
+    return "bg-emerald-500/15 border-emerald-500/25 text-emerald-500";
+  };
+
+  // #6 — Prepayment savings calculator
+  const getPrepaymentSavings = (emi: any, extra: number) => {
+    const P = Number(emi.principal);
+    const rate = Number(emi.interest_rate);
+    const totalTenure = Number(emi.tenure_months);
+    const PMT = Number(emi.emi_amount);
+    const paidMonths = Number(emi.paid_months);
+    const r = rate / 100 / 12;
+
+    // Remaining principal after paid months
+    let balance = P;
+    if (r > 0) {
+      balance = P * Math.pow(1 + r, paidMonths) - PMT * ((Math.pow(1 + r, paidMonths) - 1) / r);
+    } else {
+      balance = P - PMT * paidMonths;
+    }
+    balance = Math.max(0, balance);
+
+    const remainingTenure = totalTenure - paidMonths;
+
+    // Standard: total interest remaining without extra payment
+    let standardInterest = 0;
+    let bal = balance;
+    for (let i = 0; i < remainingTenure && bal > 0; i++) {
+      const intCharge = r > 0 ? bal * r : 0;
+      standardInterest += intCharge;
+      bal = bal - (PMT - intCharge);
+      if (bal < 0) bal = 0;
+    }
+
+    // With extra payment
+    let withExtraMonths = 0;
+    let withExtraInterest = 0;
+    bal = balance;
+    const totalPMT = PMT + extra;
+    while (bal > 0 && withExtraMonths < remainingTenure) {
+      const intCharge = r > 0 ? bal * r : 0;
+      withExtraInterest += intCharge;
+      bal = bal - (totalPMT - intCharge);
+      withExtraMonths++;
+      if (bal < 0) bal = 0;
+    }
+
+    const monthsSaved = remainingTenure - withExtraMonths;
+    const interestSaved = Math.max(0, standardInterest - withExtraInterest);
+
+    // New payoff date
+    const start = new Date(emi.start_date);
+    const newPayoffDate = addMonths(start, paidMonths + withExtraMonths);
+
+    return {
+      monthsSaved,
+      interestSaved,
+      newPayoffStr: format(newPayoffDate, "MMM yyyy"),
+    };
+  };
+
+  // #5 — Pay EMI from chosen account
+  const handlePayEmi = async (emi: any, accountId: string) => {
+    const account = accounts.find((a) => a.id === accountId);
+    if (!account) {
+      showToast("Selected account not found.", "warning");
       return;
     }
 
-    if (sbiAccount.balance < emi.emi_amount) {
-      showToast("Insufficient balance in SBI account to pay EMI", "error");
+    if (Number(account.balance) < Number(emi.emi_amount)) {
+      showToast(`Insufficient balance in ${account.name} to pay EMI`, "error");
       return;
     }
 
-    const nextPaid = emi.paid_months + 1;
-    if (nextPaid > emi.tenure_months) {
+    const nextPaid = Number(emi.paid_months) + 1;
+    if (nextPaid > Number(emi.tenure_months)) {
       showToast("This loan is already fully paid off!", "info");
       return;
     }
@@ -167,16 +247,18 @@ export const EmiManager: React.FC = () => {
 
       await addTransaction({
         user_id: emi.user_id,
-        account_id: sbiAccount.id,
+        account_id: account.id,
         type: "expense",
         amount: Number(emi.emi_amount),
         category: "EMI 💳",
         note: `EMI Payment: ${emi.name} (Month ${nextPaid}/${emi.tenure_months})`,
         date: new Date().toISOString().split("T")[0],
-        is_recurring: false
+        is_recurring: false,
       });
 
-      showToast(`Paid monthly EMI of ${formatIndianCurrency(emi.emi_amount)}. Month ${nextPaid} marked paid.`, "success");
+      showToast(`Paid monthly EMI of ${formatIndianCurrency(emi.emi_amount)} from ${account.name}. Month ${nextPaid} marked paid.`, "success");
+      setPayingEmiId(null);
+      setPayFromAccount("");
       refreshData();
     } catch (err) {
       showToast("Failed to record EMI payment", "error");
@@ -197,9 +279,24 @@ export const EmiManager: React.FC = () => {
   const totalInterestRemaining = emis.reduce((sum, e) => sum + getEmiDetails(e).remainingInterest, 0);
   const totalInterestAcrossAll = emis.reduce((sum, e) => sum + getEmiDetails(e).totalInterestCost, 0);
 
+  const activeEmis = emis.filter((e) => Number(e.paid_months) < Number(e.tenure_months));
+
+  // Account options for CustomSelect
+  const accountOptions = accounts.map((a) => ({
+    value: a.id,
+    label: a.name,
+    description: `Balance: ${formatIndianCurrency(a.balance)}`,
+  }));
+
   // Form for EMI creation / modification
   const EmiForm: React.FC<{ onClose: () => void; emi?: EMI }> = ({ onClose, emi }) => {
-    const { register, handleSubmit, setValue, watch, formState: { errors } } = useForm<any>({
+    const {
+      register,
+      handleSubmit,
+      setValue,
+      watch,
+      formState: { errors },
+    } = useForm<any>({
       resolver: zodResolver(emiSchema),
       defaultValues: {
         name: emi?.name || "",
@@ -209,29 +306,37 @@ export const EmiManager: React.FC = () => {
         emi_amount: emi?.emi_amount || "",
         start_date: emi?.start_date ? emi.start_date.split("T")[0] : new Date().toISOString().split("T")[0],
         paid_months: emi?.paid_months || 0,
-      }
+      },
     });
 
     const principal = watch("principal");
-    const interestRate = watch("interest_rate");
-    const tenureMonths = watch("tenure_months");
+    const formInterestRate = watch("interest_rate");
+    const formTenureMonths = watch("tenure_months");
+
+    // Local string states for NumberInput
+    const [principalStr, setPrincipalStr] = useState(String(emi?.principal || ""));
+    const [rateStr, setRateStr] = useState(String(emi?.interest_rate || ""));
+    const [tenureStr, setTenureStr] = useState(String(emi?.tenure_months || ""));
+    const [emiAmountStr, setEmiAmountStr] = useState(String(emi?.emi_amount || ""));
+    const [paidMonthsStr, setPaidMonthsStr] = useState(String(emi?.paid_months || 0));
 
     useEffect(() => {
-      if (principal > 0 && interestRate >= 0 && tenureMonths > 0) {
-        const p = Number(principal);
-        const r = Number(interestRate) / 100 / 12;
-        const n = Number(tenureMonths);
-
+      const p = Number(principalStr);
+      const r = Number(rateStr);
+      const n = Number(tenureStr);
+      if (p > 0 && r >= 0 && n > 0) {
+        const rMonthly = r / 100 / 12;
         let emiVal = 0;
-        if (r > 0) {
-          emiVal = (p * r * Math.pow(1 + r, n)) / (Math.pow(1 + r, n) - 1);
+        if (rMonthly > 0) {
+          emiVal = (p * rMonthly * Math.pow(1 + rMonthly, n)) / (Math.pow(1 + rMonthly, n) - 1);
         } else {
           emiVal = p / n;
         }
-
+        const rounded = String(Math.round(emiVal));
+        setEmiAmountStr(rounded);
         setValue("emi_amount", Math.round(emiVal));
       }
-    }, [principal, interestRate, tenureMonths]);
+    }, [principalStr, rateStr, tenureStr]);
 
     const onFormSubmit = async (data: any) => {
       if (!profile) return;
@@ -240,24 +345,24 @@ export const EmiManager: React.FC = () => {
           await updateEmi({
             id: emi.id,
             name: data.name,
-            principal: Number(data.principal),
-            interest_rate: Number(data.interest_rate),
-            tenure_months: Number(data.tenure_months),
-            emi_amount: Number(data.emi_amount),
+            principal: Number(principalStr),
+            interest_rate: Number(rateStr),
+            tenure_months: Number(tenureStr),
+            emi_amount: Number(emiAmountStr),
             start_date: data.start_date,
-            paid_months: Number(data.paid_months),
+            paid_months: Number(paidMonthsStr),
           });
           showToast("EMI details updated successfully", "success");
         } else {
           await addEmi({
             user_id: profile.id,
             name: data.name,
-            principal: Number(data.principal),
-            interest_rate: Number(data.interest_rate),
-            tenure_months: Number(data.tenure_months),
-            emi_amount: Number(data.emi_amount),
+            principal: Number(principalStr),
+            interest_rate: Number(rateStr),
+            tenure_months: Number(tenureStr),
+            emi_amount: Number(emiAmountStr),
             start_date: data.start_date,
-            paid_months: Number(data.paid_months),
+            paid_months: Number(paidMonthsStr),
           });
           showToast("New EMI tracker created", "success");
         }
@@ -269,9 +374,7 @@ export const EmiManager: React.FC = () => {
       }
     };
 
-    const getErrorMessage = (field: any) => {
-      return field?.message?.toString() || "";
-    };
+    const getErrorMessage = (field: any) => field?.message?.toString() || "";
 
     return (
       <form onSubmit={handleSubmit(onFormSubmit)} className="space-y-4">
@@ -281,58 +384,45 @@ export const EmiManager: React.FC = () => {
             type="text"
             placeholder="Bike Loan, Personal Loan, etc."
             {...register("name")}
-            className="w-full bg-background border border-border rounded-xl py-2.5 px-3 text-foreground text-sm focus:outline-none focus:border-gold-500"
+            className="w-full bg-background border border-border rounded-xl min-h-[48px] py-3 px-3.5 text-foreground text-sm focus:outline-none focus:border-gold-500"
           />
           {errors.name && <p className="text-rose-400 text-xs mt-1">{getErrorMessage(errors.name)}</p>}
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div>
-            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider block mb-1">Principal (₹)</label>
-            <input
-              type="number"
-              placeholder="1,00,000"
-              {...register("principal")}
-              className="w-full bg-background border border-border rounded-xl py-2.5 px-3 text-foreground text-sm focus:outline-none focus:border-gold-500"
-            />
-            {errors.principal && <p className="text-rose-400 text-xs mt-1">{getErrorMessage(errors.principal)}</p>}
-          </div>
-
-          <div>
-            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider block mb-1">Interest Rate (% p.a.)</label>
-            <input
-              type="number"
-              step="any"
-              placeholder="9"
-              {...register("interest_rate")}
-              className="w-full bg-background border border-border rounded-xl py-2.5 px-3 text-foreground text-sm focus:outline-none focus:border-gold-500"
-            />
-            {errors.interest_rate && <p className="text-rose-400 text-xs mt-1">{getErrorMessage(errors.interest_rate)}</p>}
-          </div>
-
-          <div>
-            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider block mb-1">Tenure (Months)</label>
-            <input
-              type="number"
-              placeholder="36"
-              {...register("tenure_months")}
-              className="w-full bg-background border border-border rounded-xl py-2.5 px-3 text-foreground text-sm focus:outline-none focus:border-gold-500"
-            />
-            {errors.tenure_months && <p className="text-rose-400 text-xs mt-1">{getErrorMessage(errors.tenure_months)}</p>}
-          </div>
+          <NumberInput
+            label="Principal (₹)"
+            value={principalStr}
+            onChange={(v) => { setPrincipalStr(v); setValue("principal", Number(v)); }}
+            prefix="₹"
+            placeholder="1,00,000"
+            error={errors.principal ? getErrorMessage(errors.principal) : undefined}
+          />
+          <NumberInput
+            label="Interest Rate (% p.a.)"
+            value={rateStr}
+            onChange={(v) => { setRateStr(v); setValue("interest_rate", Number(v)); }}
+            decimals
+            suffix="%"
+            placeholder="9"
+            error={errors.interest_rate ? getErrorMessage(errors.interest_rate) : undefined}
+          />
+          <NumberInput
+            label="Tenure (Months)"
+            value={tenureStr}
+            onChange={(v) => { setTenureStr(v); setValue("tenure_months", Number(v)); }}
+            suffix="mo"
+            placeholder="36"
+            error={errors.tenure_months ? getErrorMessage(errors.tenure_months) : undefined}
+          />
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div>
-            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider block mb-1">Calculated EMI (₹)</label>
-            <input
-              type="number"
-              readOnly
-              placeholder="Auto-calculated"
-              {...register("emi_amount")}
-              className="w-full bg-muted border border-border rounded-xl py-2.5 px-3 text-muted-foreground text-sm font-bold focus:outline-none"
-            />
-            {errors.emi_amount && <p className="text-rose-400 text-xs mt-1">{getErrorMessage(errors.emi_amount)}</p>}
+            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider block mb-1.5">Calculated EMI (₹)</label>
+            <div className="w-full bg-muted border border-border rounded-xl min-h-[48px] py-3 px-3.5 text-muted-foreground text-sm font-bold flex items-center">
+              {emiAmountStr ? `₹${Number(emiAmountStr).toLocaleString("en-IN")}` : "Auto-calculated"}
+            </div>
           </div>
 
           <div>
@@ -340,21 +430,18 @@ export const EmiManager: React.FC = () => {
             <input
               type="date"
               {...register("start_date")}
-              className="w-full bg-background border border-border rounded-xl py-2.5 px-3 text-foreground text-sm focus:outline-none focus:border-gold-500"
+              className="w-full bg-background border border-border rounded-xl min-h-[48px] py-3 px-3.5 text-foreground text-sm focus:outline-none focus:border-gold-500"
             />
             {errors.start_date && <p className="text-rose-400 text-xs mt-1">{getErrorMessage(errors.start_date)}</p>}
           </div>
 
-          <div>
-            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider block mb-1">Months Paid Already</label>
-            <input
-              type="number"
-              placeholder="0"
-              {...register("paid_months")}
-              className="w-full bg-background border border-border rounded-xl py-2.5 px-3 text-foreground text-sm focus:outline-none focus:border-gold-500"
-            />
-            {errors.paid_months && <p className="text-rose-400 text-xs mt-1">{getErrorMessage(errors.paid_months)}</p>}
-          </div>
+          <NumberInput
+            label="Months Paid Already"
+            value={paidMonthsStr}
+            onChange={(v) => { setPaidMonthsStr(v); setValue("paid_months", Number(v)); }}
+            placeholder="0"
+            error={errors.paid_months ? getErrorMessage(errors.paid_months) : undefined}
+          />
         </div>
 
         <div className="flex gap-3 mt-6 pt-4 border-t border-border">
@@ -409,7 +496,7 @@ export const EmiManager: React.FC = () => {
             {health.desc}
           </p>
           <div className="w-full h-3 bg-muted border border-border rounded-full mt-3 relative overflow-hidden">
-            <div 
+            <div
               className={`h-full rounded-full transition-all ${emiRatio < 15 ? "bg-emerald-500" : emiRatio <= 20 ? "bg-amber-500" : "bg-rose-500"}`}
               style={{ width: `${Math.min(100, emiRatio)}%` }}
             />
@@ -459,7 +546,10 @@ export const EmiManager: React.FC = () => {
               const details = getEmiDetails(emi);
               const progressPercent = (Number(emi.paid_months) / Number(emi.tenure_months)) * 100;
               const isPaidOff = Number(emi.paid_months) >= Number(emi.tenure_months);
-              
+              const nextDue = getNextDueDate(emi);
+              const dueBadgeStyle = getDueBadgeStyle(nextDue);
+              const isPayingThis = payingEmiId === emi.id;
+
               return (
                 <div key={emi.id} className="glass-card rounded-2xl p-6 border border-border flex flex-col justify-between space-y-5 relative overflow-hidden">
                   <div className="absolute top-0 right-0 p-4 opacity-[0.02] pointer-events-none">
@@ -467,8 +557,8 @@ export const EmiManager: React.FC = () => {
                   </div>
 
                   <div className="flex justify-between items-start">
-                    <div>
-                      <h5 className="text-lg font-bold text-foreground m-0 flex items-center gap-2">
+                    <div className="flex-1 min-w-0">
+                      <h5 className="text-lg font-bold text-foreground m-0 flex items-center gap-2 flex-wrap">
                         {emi.name}
                         {isPaidOff && (
                           <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-500/15 border border-emerald-500/20 text-emerald-500 font-bold uppercase tracking-wider">
@@ -479,9 +569,17 @@ export const EmiManager: React.FC = () => {
                       <span className="text-xs text-muted-foreground mt-1 block">
                         Principal: {formatIndianCurrency(emi.principal)} @ {emi.interest_rate}% interest
                       </span>
+
+                      {/* #7 — Next due date badge */}
+                      {!isPaidOff && (
+                        <div className={`inline-flex items-center gap-1.5 mt-2 px-2.5 py-1 rounded-lg border text-[11px] font-semibold ${dueBadgeStyle}`}>
+                          <CalendarDays className="w-3.5 h-3.5" />
+                          Next Due: {format(nextDue, "d MMM yyyy")}
+                        </div>
+                      )}
                     </div>
-                    
-                    <div className="flex gap-1 shrink-0">
+
+                    <div className="flex gap-1 shrink-0 ml-2">
                       <button
                         onClick={() => setEditingEmi(emi)}
                         className="p-1.5 rounded-lg text-muted-foreground hover:text-gold-400 hover:bg-gold-400/10 transition-all"
@@ -532,22 +630,63 @@ export const EmiManager: React.FC = () => {
                       <span className="font-semibold text-foreground">{progressPercent.toFixed(0)}%</span>
                     </div>
                     <div className="w-full h-2.5 bg-muted border border-border rounded-full overflow-hidden">
-                      <div 
+                      <div
                         className="h-full bg-gold-500 rounded-full transition-all duration-500"
                         style={{ width: `${progressPercent}%` }}
                       />
                     </div>
                   </div>
 
-                  {!isPaidOff && (
+                  {/* #5 — Pay EMI from any account */}
+                  {!isPaidOff && !isPayingThis && (
                     <button
-                      onClick={() => handlePayEmi(emi)}
+                      onClick={() => {
+                        setPayingEmiId(emi.id);
+                        setPayFromAccount(accounts[0]?.id || "");
+                      }}
                       className="w-full bg-muted hover:bg-gold-500 border border-border hover:border-gold-500 hover:text-white text-foreground font-semibold py-2 rounded-xl transition-all flex items-center justify-center gap-1.5 text-xs hover:shadow-lg hover:shadow-violet-600/20"
                     >
                       <Coins className="w-4 h-4" />
-                      Record Monthly EMI payment (Deduct SBI)
+                      Record Monthly EMI Payment
+                      <ChevronDown className="w-3.5 h-3.5 ml-0.5" />
                     </button>
                   )}
+
+                  {/* Inline account selector panel */}
+                  {!isPaidOff && isPayingThis && (
+                    <div className="space-y-3 p-4 bg-muted/40 border border-border rounded-xl">
+                      <p className="text-xs font-semibold text-foreground">
+                        Select account to deduct {formatIndianCurrency(emi.emi_amount)} from:
+                      </p>
+                      <CustomSelect
+                        options={accountOptions}
+                        value={payFromAccount}
+                        onChange={setPayFromAccount}
+                        placeholder="Choose account"
+                        label="Deduct from Account"
+                        searchable={accountOptions.length > 5}
+                      />
+                      <div className="flex gap-2 mt-1">
+                        <button
+                          type="button"
+                          onClick={() => { setPayingEmiId(null); setPayFromAccount(""); }}
+                          className="flex-1 bg-muted hover:bg-muted/70 border border-border text-foreground font-semibold py-2 rounded-xl text-xs transition-all"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="button"
+                          disabled={!payFromAccount}
+                          onClick={() => handlePayEmi(emi, payFromAccount)}
+                          className="flex-1 bg-gold-500 hover:bg-gold-600 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold py-2 rounded-xl text-xs transition-all flex items-center justify-center gap-1.5"
+                        >
+                          <Coins className="w-3.5 h-3.5" />
+                          Confirm Payment
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
                   {isPaidOff && (
                     <div className="p-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center gap-2 text-xs text-emerald-500 font-semibold">
                       <Sparkles className="w-4 h-4 animate-bounce" /> Fully Paid off! You saved interest fees.
@@ -587,10 +726,10 @@ export const EmiManager: React.FC = () => {
                   />
                 </div>
               </div>
-              <input 
-                type="range" 
-                min={20000} 
-                max={1500000} 
+              <input
+                type="range"
+                min={20000}
+                max={1500000}
                 step={5000}
                 value={assetPrice}
                 onChange={(e) => setAssetPrice(Number(e.target.value))}
@@ -618,10 +757,10 @@ export const EmiManager: React.FC = () => {
                   />
                 </div>
               </div>
-              <input 
-                type="range" 
-                min={0} 
-                max={assetPrice} 
+              <input
+                type="range"
+                min={0}
+                max={assetPrice}
                 step={2000}
                 value={downpayment}
                 onChange={(e) => setDownpayment(Number(e.target.value))}
@@ -650,10 +789,10 @@ export const EmiManager: React.FC = () => {
                   <span className="text-muted-foreground text-[10px]">%</span>
                 </div>
               </div>
-              <input 
-                type="range" 
-                min={0} 
-                max={20} 
+              <input
+                type="range"
+                min={0}
+                max={20}
                 step={0.5}
                 value={interestRate}
                 onChange={(e) => setInterestRate(Number(e.target.value))}
@@ -681,10 +820,10 @@ export const EmiManager: React.FC = () => {
                   <span className="text-muted-foreground text-[10px]">Months</span>
                 </div>
               </div>
-              <input 
-                type="range" 
-                min={6} 
-                max={84} 
+              <input
+                type="range"
+                min={6}
+                max={84}
                 step={6}
                 value={tenureMonths}
                 onChange={(e) => setTenureMonths(Number(e.target.value))}
@@ -761,13 +900,13 @@ export const EmiManager: React.FC = () => {
                         <Cell key={`cell-${index}`} fill={entry.color} />
                       ))}
                     </Pie>
-                    <Tooltip 
+                    <Tooltip
                       contentStyle={{ backgroundColor: "var(--card)", borderColor: "var(--border)", borderRadius: "10px", color: "var(--foreground)" }}
                       formatter={(value: any) => [formatIndianCurrency(value), ""]}
                     />
-                    <Legend 
-                      layout="vertical" 
-                      verticalAlign="middle" 
+                    <Legend
+                      layout="vertical"
+                      verticalAlign="middle"
                       align="right"
                       iconSize={8}
                       wrapperStyle={{ fontSize: "10px", right: 20 }}
@@ -784,6 +923,92 @@ export const EmiManager: React.FC = () => {
         </div>
       </div>
 
+      {/* #6 — Prepayment Savings Calculator */}
+      {activeEmis.length > 0 && (
+        <div className="glass-card rounded-2xl p-6 border border-border space-y-5">
+          <div className="flex items-center gap-2">
+            <TrendingDown className="w-5 h-5 text-emerald-400" />
+            <h4 className="text-lg font-bold text-foreground m-0">Prepayment Savings Calculator</h4>
+          </div>
+          <p className="text-xs text-muted-foreground -mt-2">
+            See how much faster you can pay off your loans — and how much interest you save — by paying a little extra each month.
+          </p>
+
+          {/* Extra payment slider */}
+          <div className="space-y-2">
+            <div className="flex justify-between items-center text-xs">
+              <span className="text-muted-foreground font-semibold uppercase">Extra Monthly Payment</span>
+              <div className="flex items-center gap-1 bg-background border border-border rounded-lg px-2 py-0.5 text-foreground font-bold text-xs">
+                <span className="text-muted-foreground text-[10px]">₹</span>
+                <input
+                  type="number"
+                  min={0}
+                  max={100000}
+                  value={extraPayment}
+                  onChange={(e) => setExtraPayment(Number(e.target.value))}
+                  className="w-20 bg-transparent text-foreground text-right focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                />
+              </div>
+            </div>
+            <input
+              type="range"
+              min={500}
+              max={50000}
+              step={500}
+              value={extraPayment}
+              onChange={(e) => setExtraPayment(Number(e.target.value))}
+              className="w-full accent-emerald-500 bg-muted rounded-lg appearance-none h-1.5 cursor-pointer"
+            />
+            <div className="flex justify-between text-[10px] text-muted-foreground">
+              <span>₹500</span>
+              <span>₹25,000</span>
+              <span>₹50,000</span>
+            </div>
+          </div>
+
+          {/* Per-EMI breakdown */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {activeEmis.map((emi) => {
+              const savings = getPrepaymentSavings(emi, extraPayment);
+              return (
+                <div key={emi.id} className="bg-muted/40 border border-border rounded-xl p-4 space-y-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <span className="text-sm font-bold text-foreground block">{emi.name}</span>
+                      <span className="text-[11px] text-muted-foreground">
+                        {formatIndianCurrency(emi.emi_amount)}/mo + {formatIndianCurrency(extraPayment)} extra
+                      </span>
+                    </div>
+                    <span className="shrink-0 text-[10px] font-semibold px-2 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-500">
+                      {savings.monthsSaved > 0 ? `${savings.monthsSaved}mo saved` : "No change"}
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3 text-xs">
+                    <div>
+                      <span className="text-muted-foreground block">New Payoff Date</span>
+                      <span className="font-bold text-foreground block mt-0.5">{savings.newPayoffStr}</span>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground block">Interest Saved</span>
+                      <span className="font-bold text-emerald-500 block mt-0.5">
+                        {savings.interestSaved > 0 ? `+${formatIndianCurrency(savings.interestSaved)}` : "₹0"}
+                      </span>
+                    </div>
+                  </div>
+
+                  {savings.monthsSaved > 0 && (
+                    <div className="text-[11px] text-muted-foreground bg-emerald-500/5 border border-emerald-500/10 rounded-lg px-3 py-2">
+                      Pay off <span className="font-semibold text-emerald-400">{savings.monthsSaved} months earlier</span> and save <span className="font-semibold text-emerald-400">{formatIndianCurrency(savings.interestSaved)}</span> in interest by adding just {formatIndianCurrency(extraPayment)}/month.
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {/* Add Modal */}
       <Modal isOpen={isAddOpen} onClose={() => setIsAddOpen(false)} title="Add Loan Tracker">
         <EmiForm onClose={() => setIsAddOpen(false)} />
@@ -792,9 +1017,9 @@ export const EmiManager: React.FC = () => {
       {/* Edit Modal */}
       <Modal isOpen={editingEmi !== null} onClose={() => setEditingEmi(null)} title="Edit Loan Tracker">
         {editingEmi && (
-          <EmiForm 
-            emi={editingEmi} 
-            onClose={() => setEditingEmi(null)} 
+          <EmiForm
+            emi={editingEmi}
+            onClose={() => setEditingEmi(null)}
           />
         )}
       </Modal>

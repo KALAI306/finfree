@@ -217,7 +217,7 @@ export const Dashboard: React.FC = () => {
 
         <button
           onClick={() => setIsAddTxOpen(true)}
-          className="btn-primary flex items-center gap-2 px-5 py-2.5 self-start sm:self-auto cursor-pointer"
+          className="btn-primary flex items-center gap-2 px-5 py-2.5 self-start sm:self-auto cursor-pointer min-h-[52px] min-w-[52px]"
         >
           <Plus className="w-4 h-4" strokeWidth={2.5} />
           Add Transaction
@@ -714,6 +714,61 @@ export const Dashboard: React.FC = () => {
           </div>
         )}
       </div>
+
+      {/* ── Monthly Budget Tracker ── */}
+      {(() => {
+        const budgetEntries = Object.entries(budgetLimits).filter(([, limit]) => Number(limit) > 0);
+        return (
+          <div className="glass-card p-6 animate-fade-in-up">
+            <div className="flex items-center gap-2 mb-5">
+              <div className="icon-box icon-box-primary w-8 h-8">
+                <BarChart3 className="w-4 h-4" />
+              </div>
+              <span className="label-xs">Monthly Budget</span>
+            </div>
+            {budgetEntries.length === 0 ? (
+              <p className="text-xs text-muted-foreground text-center py-4">
+                Set budgets in Settings → Budget Limits
+              </p>
+            ) : (
+              <div className="space-y-4">
+                {budgetEntries.map(([cat, limit]) => {
+                  const spent = monthTxs.filter(t => t.type === "expense" && t.category === cat).reduce((s, t) => s + Number(t.amount), 0);
+                  const pct = Number(limit) > 0 ? Math.min(100, (spent / Number(limit)) * 100) : 0;
+                  const barColor = pct > 90 ? "#ef4444" : pct >= 70 ? "#f59e0b" : "#10b981";
+                  const pctColor = pct > 90 ? "text-rose-400" : pct >= 70 ? "text-amber-400" : "text-emerald-400";
+                  return (
+                    <div key={cat}>
+                      <div className="flex items-center justify-between text-xs mb-1.5 gap-2">
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <span className="text-base leading-none">{getTxIcon(cat, "expense")}</span>
+                          <span className="font-medium text-foreground truncate">{stripCategoryEmoji(cat)}</span>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <span className="font-mono text-muted-foreground">
+                            {formatIndianCurrency(spent)} / {formatIndianCurrency(Number(limit))}
+                          </span>
+                          <span className={`font-bold font-mono w-9 text-right ${pctColor}`}>{pct.toFixed(0)}%</span>
+                        </div>
+                      </div>
+                      <div className="progress-track">
+                        <div
+                          className="progress-fill"
+                          style={{ width: `${pct}%`, background: barColor, boxShadow: "none" }}
+                          role="progressbar"
+                          aria-valuenow={Math.round(pct)}
+                          aria-valuemin={0}
+                          aria-valuemax={100}
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        );
+      })()}
 
       {/* Add Transaction Modal */}
       <Modal isOpen={isAddTxOpen} onClose={() => setIsAddTxOpen(false)} title="New Transaction">
