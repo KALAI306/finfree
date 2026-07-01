@@ -27,7 +27,7 @@ import { Browser } from "@capacitor/browser";
 import { supabase } from "./lib/db";
 
 const AppContent: React.FC = () => {
-  const { user, loading } = useApp();
+  const { user, loading, isAdmin } = useApp();
   const [setupDone, setSetupDone] = useState(() => !isFirstLaunch());
   const [biometricUnlocked, setBiometricUnlocked] = useState(false);
 
@@ -77,7 +77,7 @@ const AppContent: React.FC = () => {
               <Route path="/rules" element={<RulesDashboard />} />
               <Route path="/reports" element={<Reports />} />
               <Route path="/settings" element={<Settings />} />
-              <Route path="/ai-settings" element={<AISettings />} />
+              <Route path="/ai-settings" element={isAdmin ? <AISettings /> : <Navigate to="/" replace />} />
               <Route path="/admin" element={<AdminPanel />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>

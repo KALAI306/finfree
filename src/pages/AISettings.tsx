@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { Navigate } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
 import {
   fetchAISettings,
@@ -193,7 +194,10 @@ const KeyInput: React.FC<{
 // ── Main Page ───────────────────────────────────────────────────────────────
 
 export const AISettings: React.FC = () => {
-  const { user, showToast } = useApp();
+  const { user, isAdmin, showToast } = useApp();
+
+  // Only admin can access this page
+  if (!isAdmin) return <Navigate to="/" replace />;
 
   const [settings,    setSettings]    = useState<Partial<AISettingsData>>({});
   const [logs,        setLogs]        = useState<AIUsageLog[]>([]);

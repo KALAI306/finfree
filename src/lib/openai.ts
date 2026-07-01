@@ -1,99 +1,121 @@
 /**
  * FinFree AI — Worker Client
- * All AI calls now route through the Cloudflare Worker.
- * API key is stored securely in Wrangler secrets — never exposed to the browser.
+ * Follows the same pattern as the L2L sample project:
+ *   Frontend sends { query, userId, context_str }
+ *   Worker returns { reply } or { tool_call }
  */
 
 import type { Profile, Account, Transaction, Investment, EMI, Goal } from './db';
 
-// ── Config ─────────────────────────────────────────────────────────────────
+const WORKER_URL = (import.meta.env.VITE_AI_WORKER_URL as string || '').replace(/\/$/, '');
 
-const WORKER_URL = import.meta.env.VITE_AI_WORKER_URL as string || '';
+// ── Context builder ──────────────────────────────────────────────────────────
+// Formats all financial data into a compact text snapshot sent to the worker.
 
-export interface ChatMessage {
-  role: 'user' | 'assistant';
-  content: string;
+export function buildContextStr(
+  profile:      Profile | null,
+  accounts:     Account[],
+  transactions: Transaction[],
+  investments:  Investment[],
+  emis:         EMI[],
+  goals:        Goal[],
+): string {
+  const d  = new Date();
+  const cm = d.getMonth();
+  const cy = d.getFullYear();
+
+  const monthTxs  = transactions.filter(t => {
+    const td = new Date(t.date);
+    return td.getMonth() === cm && td.getFullYear() === cy;
+  });
+  const monthInc  = monthTxs.filter(t => t.type === 'income').reduce((s, t) => s + Number(t.amount), 0);
+  const monthExp  = monthTxs.filter(t => t.type === 'expense').reduce((s, t) => s + Number(t.amount), 0);
+  const totalBal  = accounts.reduce((s, a) => s + Number(a.balance), 0);
+  const totalInv  = investments.reduce((s, i) => s + Number(i.current_value || 0), 0);
+  const totalEmi  = emis.reduce((s, e) => s + Number(e.emi_amount), 0);
+  const netWorth  = totalBal + totalInv - Number(profile?.family_debt || 0);
+  const fmt       = (n: number) => `₹${n.toLocaleString('en-IN')}`;
+
+  const lines: string[] = [
+    `Name: ${profile?.name || 'User'} | Age: ${profile?.age || '-'} | Salary: ${fmt(Number(profile?.monthly_salary || 0))}/mo`,
+    `Net Worth: ${fmt(netWorth)} | Family Debt: ${fmt(Number(profile?.family_debt || 0))}`,
+    `Freedom Target: ${fmt(Number(profile?.freedom_target || 0))} by age ${profile?.target_freedom_age || '-'}`,
+    '',
+    `This Month → Income: ${fmt(monthInc)} | Expenses: ${fmt(monthExp)} | Saved: ${fmt(monthInc - monthExp)}`,
+    '',
+    `Accounts (total ${fmt(totalBal)}):`,
+    ...accounts.map(a => `  • ${a.name} [ID:${a.id}] (${a.type}): ${fmt(Number(a.balance))}`),
+    accounts.length === 0 ? '  None' : '',
+    `EMIs (${fmt(totalEmi)}/mo):`,
+    ...emis.map(e => `  • ${e.name}: ${fmt(Number(e.emi_amount))}/mo`),
+    emis.length === 0 ? '  None' : '',
+    `Goals:`,
+    ...goals.map(g => `  • ${g.name} [ID:${g.id}]: ${fmt(Number(g.current_amount))} / ${fmt(Number(g.target_amount))}`),
+    goals.length === 0 ? '  None' : '',
+    `Investments (total ${fmt(totalInv)}):`,
+    ...investments.map(i => `  • ${i.name} (${i.type}): ${fmt(Number(i.current_value || 0))}`),
+    investments.length === 0 ? '  None' : '',
+    `Recent Transactions (last 20):`,
+    ...transactions.slice(0, 20).map(t =>
+      `  • ${t.date} | ${t.type === 'income' ? '+' : '-'}${fmt(Number(t.amount))} | ${t.category} | ${t.note || ''}`
+    ),
+    transactions.length === 0 ? '  None' : '',
+  ];
+
+  return lines.filter(l => l !== undefined).join('\n');
 }
 
-export interface FinancialContext {
-  profile:      Profile | null;
-  accounts:     Account[];
-  transactions: Transaction[];
-  investments:  Investment[];
-  emis:         EMI[];
-  goals:        Goal[];
-}
-
-export interface ToolCall {
-  name: string;
-  args: Record<string, any>;
-}
-
-// ── Core worker caller ──────────────────────────────────────────────────────
+// ── Core worker caller ───────────────────────────────────────────────────────
 
 async function callWorker(endpoint: string, payload: Record<string, any>, userId?: string): Promise<any> {
   if (!WORKER_URL) {
-    throw new Error('VITE_AI_WORKER_URL is not set. Please configure it in your .env file.');
+    throw new Error('VITE_AI_WORKER_URL is not configured. Ask your admin to set it up.');
   }
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   if (userId) headers['X-User-ID'] = userId;
 
-  const res = await fetch(`${WORKER_URL}/api/${endpoint}`, {
-    method:  'POST',
+  const res  = await fetch(`${WORKER_URL}/api/${endpoint}`, {
+    method: 'POST',
     headers,
-    body:    JSON.stringify(payload),
+    body:   JSON.stringify(payload),
   });
-
   const data = await res.json();
-  if (!res.ok || !data.ok) {
-    throw new Error(data.error || `Worker error ${res.status}`);
-  }
+  if (!res.ok || !data.ok) throw new Error(data.error || `Worker error ${res.status}`);
   return data;
 }
 
-// ── Main chat function ──────────────────────────────────────────────────────
-// Returns either a plain text reply or a tool_call for client-side execution.
+// ── Chat ─────────────────────────────────────────────────────────────────────
 
 export async function chatWithAI(
-  history: ChatMessage[],
-  ctx: FinancialContext,
-  onToolCall: (name: string, args: any) => Promise<string>,
-  userId?: string,
+  query:       string,
+  userId:      string,
+  contextStr:  string,
+  onToolCall:  (name: string, args: Record<string, any>) => Promise<string>,
 ): Promise<string> {
-  const lastUserMsg = [...history].reverse().find(m => m.role === 'user')?.content || '';
+  const data = await callWorker('chat', { query, userId, context_str: contextStr }, userId);
 
-  const data = await callWorker('chat', {
-    query:    lastUserMsg,
-    ctx,
-    userId:   userId || '',
-    messages: history.slice(0, -1), // send history excluding last user msg (sent as query)
-  }, userId);
-
-  // Worker returned a DB-write tool call → execute client-side
+  // Worker returned a tool call → execute client-side (DB write to Supabase/local)
   if (data.tool_call) {
-    const tc: ToolCall = data.tool_call;
+    const tc = data.tool_call;
     let toolResult: string;
     try {
       toolResult = await onToolCall(tc.name, tc.args);
     } catch (e: any) {
-      toolResult = `Error executing ${tc.name}: ${e.message}`;
+      toolResult = `Error: ${e.message}`;
     }
-
-    // Send tool result back for final AI response
-    const finalData = await callWorker('chat', {
-      query:    `[Tool result for ${tc.name}]: ${toolResult}. Now give the user a friendly confirmation.`,
-      ctx,
-      userId:   userId || '',
-      messages: history,
+    // Send tool result back for a friendly confirmation message
+    const final = await callWorker('chat', {
+      query:       `[Tool result for ${tc.name}]: ${toolResult}. Give the user a short, friendly confirmation.`,
+      userId,
+      context_str: contextStr,
     }, userId);
-
-    return finalData.reply || `Done: ${toolResult}`;
+    return final.reply || toolResult;
   }
 
   return data.reply || "Sorry, I couldn't generate a response.";
 }
 
-// ── Statement parser ────────────────────────────────────────────────────────
+// ── Statement parser ─────────────────────────────────────────────────────────
 
 export interface ParsedAITransaction {
   date:     string;
@@ -111,11 +133,10 @@ export async function parseStatementWithAI(
     statement_text: statementText,
     userId: userId || '',
   }, userId);
-
   return Array.isArray(data.transactions) ? data.transactions : [];
 }
 
-// ── Settings API ────────────────────────────────────────────────────────────
+// ── Settings API (admin only) ────────────────────────────────────────────────
 
 export interface AISettings {
   ai_provider:         string;
@@ -149,7 +170,7 @@ export async function updateAISetting(key: string, value: string): Promise<void>
   });
 }
 
-// ── Logs API ────────────────────────────────────────────────────────────────
+// ── Logs API ─────────────────────────────────────────────────────────────────
 
 export interface AIUsageLog {
   id:                string;
@@ -172,7 +193,7 @@ export async function fetchAILogs(limit = 100): Promise<AIUsageLog[]> {
   return data.logs || [];
 }
 
-// ── Memory API ──────────────────────────────────────────────────────────────
+// ── Memory API ───────────────────────────────────────────────────────────────
 
 export interface AIMemoryItem {
   id:         string;
@@ -195,7 +216,7 @@ export async function clearAIMemory(userId: string): Promise<void> {
   });
 }
 
-// ── Health API ──────────────────────────────────────────────────────────────
+// ── Health API ───────────────────────────────────────────────────────────────
 
 export async function fetchAIHealth(): Promise<{ status: string; total_ai_calls: number; keys_configured: number }> {
   if (!WORKER_URL) return { status: 'unconfigured', total_ai_calls: 0, keys_configured: 0 };
