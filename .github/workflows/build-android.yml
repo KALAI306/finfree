@@ -32,6 +32,7 @@ jobs:
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
           VITE_GEMINI_API_KEY: ${{ secrets.VITE_GEMINI_API_KEY }}
+          VITE_AI_WORKER_URL: https://finfree-ai.finfree-ai.workers.dev
 
       # 5. Set up Java 17 (required for Android)
       - name: Set up Java 17

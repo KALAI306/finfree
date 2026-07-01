@@ -2,7 +2,13 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Send, Bot, X, Sparkles, RefreshCw, Plus, Target, ArrowUpDown } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { chatWithAI, buildContextStr } from '../../lib/openai';
-import { addTransaction, addGoal, updateGoal } from '../../lib/db';
+import {
+  addTransaction, updateTransaction, deleteTransaction,
+  addGoal, updateGoal, deleteGoal,
+  addAccount, updateAccount, deleteAccount,
+  addInvestment, updateInvestment, deleteInvestment,
+  addEmi, updateEmi, deleteEmi,
+} from '../../lib/db';
 
 const QUICK_PROMPTS = [
   'How is my net worth trending?',
@@ -52,48 +58,106 @@ export const FloatingAiAssistant: React.FC = () => {
   // Execute DB tool calls returned by the worker
   const handleToolCall = useCallback(async (name: string, args: Record<string, any>): Promise<string> => {
     if (!user?.id) return 'Error: not logged in';
+    const uid = user.id;
+    const fmt = (n: number) => `₹${Number(n).toLocaleString('en-IN')}`;
 
+    // ── Transactions ──
     if (name === 'add_transaction') {
       const accountId = args.account_id && accounts.find(a => a.id === args.account_id)
-        ? args.account_id
-        : accounts[0]?.id;
+        ? args.account_id : accounts[0]?.id;
       if (!accountId) return 'Error: no account found. Please create an account first.';
-      await addTransaction({
-        user_id:    user.id,
-        account_id: accountId,
-        type:       args.type,
-        amount:     Number(args.amount),
-        category:   args.category,
-        note:       args.note,
-        date:       args.date,
-        is_recurring: false,
-      });
+      await addTransaction({ user_id: uid, account_id: accountId, type: args.type, amount: Number(args.amount), category: args.category, note: args.note, date: args.date, is_recurring: false });
       await refreshData();
-      return `Transaction added: ${args.type === 'income' ? '+' : '-'}₹${Number(args.amount).toLocaleString('en-IN')} for "${args.note}" on ${args.date}`;
+      return `Transaction added: ${args.type === 'income' ? '+' : '-'}${fmt(args.amount)} for "${args.note}" on ${args.date}`;
+    }
+    if (name === 'update_transaction') {
+      await updateTransaction({ id: args.id, ...(args.amount !== undefined && { amount: Number(args.amount) }), ...(args.category && { category: args.category }), ...(args.note && { note: args.note }), ...(args.date && { date: args.date }) });
+      await refreshData();
+      return `Transaction updated successfully.`;
+    }
+    if (name === 'delete_transaction') {
+      await deleteTransaction(args.id);
+      await refreshData();
+      return `Transaction deleted successfully.`;
     }
 
+    // ── Goals ──
     if (name === 'add_goal') {
-      await addGoal({
-        user_id:        user.id,
-        name:           args.name,
-        target_amount:  Number(args.target_amount),
-        current_amount: Number(args.current_amount || 0),
-        deadline:       args.deadline || null,
-      });
+      await addGoal({ user_id: uid, name: args.name, target_amount: Number(args.target_amount), current_amount: Number(args.current_amount || 0), deadline: args.deadline || null });
       await refreshData();
-      return `Goal "${args.name}" created with target ₹${Number(args.target_amount).toLocaleString('en-IN')}`;
+      return `Goal "${args.name}" created with target ${fmt(args.target_amount)}`;
     }
-
     if (name === 'update_goal_progress') {
       const goal = goals.find(g => g.id === args.goal_id);
       if (!goal) return 'Goal not found';
       const newAmount = Number(goal.current_amount) + Number(args.add_amount);
       await updateGoal({ id: args.goal_id, current_amount: newAmount });
       await refreshData();
-      return `Added ₹${Number(args.add_amount).toLocaleString('en-IN')} to "${goal.name}". Now ₹${newAmount.toLocaleString('en-IN')} / ₹${Number(goal.target_amount).toLocaleString('en-IN')}`;
+      return `Added ${fmt(args.add_amount)} to "${goal.name}". Now ${fmt(newAmount)} / ${fmt(goal.target_amount)}`;
+    }
+    if (name === 'update_goal') {
+      await updateGoal({ id: args.id, ...(args.name && { name: args.name }), ...(args.target_amount !== undefined && { target_amount: Number(args.target_amount) }), ...(args.deadline && { deadline: args.deadline }) });
+      await refreshData();
+      return `Goal updated successfully.`;
+    }
+    if (name === 'delete_goal') {
+      await deleteGoal(args.id);
+      await refreshData();
+      return `Goal deleted successfully.`;
     }
 
-    return 'Unknown tool';
+    // ── Accounts ──
+    if (name === 'create_account') {
+      await addAccount({ user_id: uid, name: args.name, type: args.type, balance: Number(args.balance) });
+      await refreshData();
+      return `Account "${args.name}" created with balance ${fmt(args.balance)}`;
+    }
+    if (name === 'update_account') {
+      await updateAccount({ id: args.id, ...(args.name && { name: args.name }), ...(args.balance !== undefined && { balance: Number(args.balance) }) });
+      await refreshData();
+      return `Account updated successfully.`;
+    }
+    if (name === 'delete_account') {
+      await deleteAccount(args.id);
+      await refreshData();
+      return `Account deleted successfully.`;
+    }
+
+    // ── Investments ──
+    if (name === 'add_investment') {
+      await addInvestment({ user_id: uid, name: args.name, type: args.type, quantity: null, invested_amount: Number(args.invested_amount), current_value: Number(args.current_value), return_percent: args.current_value && args.invested_amount ? ((args.current_value - args.invested_amount) / args.invested_amount * 100) : 0 });
+      await refreshData();
+      return `Investment "${args.name}" added. Invested: ${fmt(args.invested_amount)}, Current value: ${fmt(args.current_value)}`;
+    }
+    if (name === 'update_investment') {
+      await updateInvestment({ id: args.id, ...(args.current_value !== undefined && { current_value: Number(args.current_value) }), ...(args.name && { name: args.name }) });
+      await refreshData();
+      return `Investment updated successfully.`;
+    }
+    if (name === 'delete_investment') {
+      await deleteInvestment(args.id);
+      await refreshData();
+      return `Investment deleted successfully.`;
+    }
+
+    // ── EMIs ──
+    if (name === 'add_emi') {
+      await addEmi({ user_id: uid, name: args.name, emi_amount: Number(args.emi_amount), principal: Number(args.principal), interest_rate: Number(args.interest_rate || 0), tenure_months: Number(args.tenure_months), start_date: args.start_date, paid_months: 0 });
+      await refreshData();
+      return `EMI "${args.name}" added. ${fmt(args.emi_amount)}/month for ${args.tenure_months} months.`;
+    }
+    if (name === 'update_emi') {
+      await updateEmi({ id: args.id, ...(args.name && { name: args.name }), ...(args.emi_amount !== undefined && { emi_amount: Number(args.emi_amount) }), ...(args.paid_months !== undefined && { paid_months: Number(args.paid_months) }) });
+      await refreshData();
+      return `EMI updated successfully.`;
+    }
+    if (name === 'delete_emi') {
+      await deleteEmi(args.id);
+      await refreshData();
+      return `EMI deleted successfully.`;
+    }
+
+    return `Unknown tool: ${name}`;
   }, [user, accounts, goals, refreshData]);
 
   const sendMessage = useCallback(async (text: string) => {

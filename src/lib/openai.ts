@@ -47,17 +47,17 @@ export function buildContextStr(
     ...accounts.map(a => `  • ${a.name} [ID:${a.id}] (${a.type}): ${fmt(Number(a.balance))}`),
     accounts.length === 0 ? '  None' : '',
     `EMIs (${fmt(totalEmi)}/mo):`,
-    ...emis.map(e => `  • ${e.name}: ${fmt(Number(e.emi_amount))}/mo`),
+    ...emis.map(e => `  • ${e.name} [ID:${e.id}]: ${fmt(Number(e.emi_amount))}/mo, ${e.paid_months}/${e.tenure_months} months paid`),
     emis.length === 0 ? '  None' : '',
     `Goals:`,
-    ...goals.map(g => `  • ${g.name} [ID:${g.id}]: ${fmt(Number(g.current_amount))} / ${fmt(Number(g.target_amount))}`),
+    ...goals.map(g => `  • ${g.name} [ID:${g.id}]: ${fmt(Number(g.current_amount))} / ${fmt(Number(g.target_amount))}${g.deadline ? ` by ${g.deadline}` : ''}`),
     goals.length === 0 ? '  None' : '',
     `Investments (total ${fmt(totalInv)}):`,
-    ...investments.map(i => `  • ${i.name} (${i.type}): ${fmt(Number(i.current_value || 0))}`),
+    ...investments.map(i => `  • ${i.name} [ID:${i.id}] (${i.type}): invested ${fmt(Number(i.invested_amount))}, now ${fmt(Number(i.current_value || 0))}`),
     investments.length === 0 ? '  None' : '',
     `Recent Transactions (last 20):`,
     ...transactions.slice(0, 20).map(t =>
-      `  • ${t.date} | ${t.type === 'income' ? '+' : '-'}${fmt(Number(t.amount))} | ${t.category} | ${t.note || ''}`
+      `  • [ID:${t.id}] ${t.date} | ${t.type === 'income' ? '+' : '-'}${fmt(Number(t.amount))} | ${t.category} | ${t.note || ''}`
     ),
     transactions.length === 0 ? '  None' : '',
   ];
