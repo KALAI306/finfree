@@ -7,6 +7,7 @@ import {
   adminDeleteUserProfile,
   type Profile,
 } from "../lib/db";
+import { fetchAISettings, updateAISetting } from "../lib/openai";
 import {
   Shield,
   Users,
@@ -20,6 +21,9 @@ import {
   Landmark,
   CircleDollarSign,
   AlertTriangle,
+  Link as LinkIcon,
+  Save,
+  CheckCircle,
 } from "lucide-react";
 
 interface UserSummary {
@@ -42,11 +46,29 @@ export const AdminPanel: React.FC = () => {
   const [rows, setRows] = useState<UserRow[]>([]);
   const [fetching, setFetching] = useState(true);
   const [confirmAction, setConfirmAction] = useState<{ type: "reset" | "delete"; userId: string; name: string } | null>(null);
+  const [appUrl, setAppUrl]       = useState('');
+  const [savingUrl, setSavingUrl] = useState(false);
+  const [urlSaved, setUrlSaved]   = useState(false);
 
   useEffect(() => {
     if (!isAdmin) return;
     loadProfiles();
+    fetchAISettings().then(s => setAppUrl(s.app_download_url || '')).catch(() => {});
   }, [isAdmin]);
+
+  const handleSaveAppUrl = async () => {
+    setSavingUrl(true);
+    try {
+      await updateAISetting('app_download_url', appUrl.trim());
+      setUrlSaved(true);
+      showToast('App download link saved', 'success');
+      setTimeout(() => setUrlSaved(false), 2500);
+    } catch {
+      showToast('Failed to save app link', 'error');
+    } finally {
+      setSavingUrl(false);
+    }
+  };
 
   const loadProfiles = async () => {
     setFetching(true);
@@ -157,6 +179,40 @@ export const AdminPanel: React.FC = () => {
             <p className="text-[11px] text-muted-foreground">{label}</p>
           </div>
         ))}
+      </div>
+
+      {/* App Settings */}
+      <div className="hero-card p-5 space-y-4">
+        <div className="flex items-center gap-2.5">
+          <div className="w-8 h-8 rounded-xl bg-primary/10 flex items-center justify-center">
+            <LinkIcon className="w-4 h-4 text-primary" />
+          </div>
+          <div>
+            <h3 className="text-sm font-bold text-foreground">App Download Link</h3>
+            <p className="text-[11px] text-muted-foreground">URL shown to web users when they switch to Local storage mode</p>
+          </div>
+        </div>
+        <div className="flex gap-2">
+          <input
+            type="url"
+            value={appUrl}
+            onChange={e => setAppUrl(e.target.value)}
+            placeholder="https://github.com/KALAI306/finfree/releases/latest"
+            className="flex-1 bg-background border border-border rounded-xl py-2.5 px-3 text-sm text-foreground focus:outline-none focus:border-primary/60 min-w-0"
+          />
+          <button
+            onClick={handleSaveAppUrl}
+            disabled={savingUrl}
+            className="shrink-0 flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-primary text-primary-foreground text-xs font-bold hover:opacity-90 transition-all disabled:opacity-50"
+          >
+            {urlSaved
+              ? <><CheckCircle className="w-3.5 h-3.5" /> Saved</>
+              : savingUrl
+              ? <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+              : <><Save className="w-3.5 h-3.5" /> Save</>
+            }
+          </button>
+        </div>
       </div>
 
       {/* Users table */}

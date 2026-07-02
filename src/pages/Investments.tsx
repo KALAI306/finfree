@@ -68,10 +68,18 @@ function getSipEntry(id: string): SipData | null {
 }
 
 // ── CAGR calculation ────────────────────────────────────────────────────────
-function calcCAGR(invested: number, currentValue: number, createdAt: string): number {
-  const years = (Date.now() - new Date(createdAt).getTime()) / (365.25 * 24 * 3600 * 1000);
-  if (years < 0.01 || invested <= 0) return 0;
-  return (Math.pow(currentValue / invested, 1 / years) - 1) * 100;
+// Returns { cagr, years } so the display layer can show "< 1 yr" for fresh entries.
+function calcCAGR(
+  invested: number,
+  currentValue: number,
+  createdAt: string,
+  purchaseDate?: string,
+): { cagr: number; years: number } {
+  const from  = purchaseDate ? purchaseDate : createdAt;
+  const years = (Date.now() - new Date(from).getTime()) / (365.25 * 24 * 3600 * 1000);
+  if (years < 1 / 365 || invested <= 0) return { cagr: 0, years };
+  const cagr = (Math.pow(currentValue / invested, 1 / years) - 1) * 100;
+  return { cagr, years };
 }
 
 // ── Format date as "12 Jun 2025" ────────────────────────────────────────────
@@ -94,6 +102,7 @@ const investmentSchema = z.object({
   quantity: z.coerce.number().nullable().optional(),
   invested_amount: z.coerce.number().positive("Invested amount must be greater than zero"),
   current_value: z.coerce.number().positive("Current value must be greater than zero"),
+  purchase_date: z.string().optional(),
 });
 
 type InvestmentFormValues = z.infer<typeof investmentSchema>;
@@ -222,6 +231,7 @@ export const Investments: React.FC = () => {
         quantity: investment?.quantity || "",
         invested_amount: investment?.invested_amount || "",
         current_value: investment?.current_value || "",
+        purchase_date: investment?.purchase_date || "",
       },
     });
 
@@ -258,6 +268,7 @@ export const Investments: React.FC = () => {
             invested_amount: Number(data.invested_amount),
             current_value: Number(data.current_value),
             return_percent,
+            purchase_date: data.purchase_date || undefined,
           });
           savedId = investment.id;
           showToast("Investment updated successfully", "success");
@@ -273,6 +284,7 @@ export const Investments: React.FC = () => {
             invested_amount: Number(data.invested_amount),
             current_value: Number(data.current_value),
             return_percent,
+            purchase_date: data.purchase_date || undefined,
           });
           savedId = "";
           showToast("Investment logged successfully", "success");
@@ -471,6 +483,19 @@ export const Investments: React.FC = () => {
               error={getErrorMessage(errors.current_value)}
             />
           </div>
+        </div>
+
+        {/* Purchase Date — used for accurate CAGR */}
+        <div>
+          <label className="block text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1.5">
+            Purchase / Start Date <span className="normal-case font-normal text-muted-foreground/60">(used for CAGR — when you actually bought this)</span>
+          </label>
+          <input
+            type="date"
+            {...register("purchase_date")}
+            max={new Date().toISOString().split("T")[0]}
+            className="w-full bg-background border border-border rounded-xl py-2.5 px-3 text-sm text-foreground focus:outline-none focus:border-primary/60 cursor-pointer"
+          />
         </div>
 
         <div className="flex gap-3 mt-6 pt-4 border-t border-border">
@@ -770,10 +795,11 @@ export const Investments: React.FC = () => {
                 {investments.map((inv) => {
                   const gainLoss = Number(inv.current_value) - Number(inv.invested_amount);
                   const isPositive = gainLoss >= 0;
-                  const cagr = calcCAGR(
+                  const { cagr, years: cagrYears } = calcCAGR(
                     Number(inv.invested_amount),
                     Number(inv.current_value),
-                    inv.created_at
+                    inv.created_at,
+                    inv.purchase_date,
                   );
                   const sipData = getSipEntry(inv.id);
                   const hasSip = sipData && sipData.sip_amount > 0;
@@ -829,10 +855,19 @@ export const Investments: React.FC = () => {
                         }`}
                       >
                         <div className="flex flex-col items-end gap-0.5">
-                          <span>
-                            {cagr >= 0 ? "+" : ""}
-                            {cagr.toFixed(1)}% p.a.
-                          </span>
+                          {cagrYears < 1 / 12 ? (
+                            <span className="text-amber-400">
+                              &lt; 1 mo
+                            </span>
+                          ) : cagrYears < 1 ? (
+                            <span title="Less than 1 year — add Purchase Date for accurate CAGR">
+                              {cagr >= 0 ? "+" : ""}{cagr.toFixed(1)}% abs.
+                            </span>
+                          ) : (
+                            <span>
+                              {cagr >= 0 ? "+" : ""}{cagr.toFixed(1)}% p.a.
+                            </span>
+                          )}
                           <span className="text-[10px] font-medium text-muted-foreground">
                             ({isPositive ? "+" : ""}
                             {formatIndianCurrency(gainLoss)})
@@ -840,9 +875,16 @@ export const Investments: React.FC = () => {
                         </div>
                       </td>
 
-                      {/* Added on */}
+                      {/* Added on / Purchase date */}
                       <td className="py-3.5 px-4 text-right text-muted-foreground text-xs whitespace-nowrap">
-                        {formatAddedOn(inv.created_at)}
+                        {inv.purchase_date ? (
+                          <div className="flex flex-col items-end gap-0.5">
+                            <span className="text-foreground">{formatAddedOn(inv.purchase_date)}</span>
+                            <span className="text-[10px] text-muted-foreground/60">purchased</span>
+                          </div>
+                        ) : (
+                          formatAddedOn(inv.created_at)
+                        )}
                       </td>
 
                       {/* Actions */}

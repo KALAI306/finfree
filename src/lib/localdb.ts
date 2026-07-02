@@ -50,6 +50,7 @@ export interface LocalInvestment {
   buy_price?: number;
   current_price?: number;
   notes?: string;
+  purchase_date?: string;
   created_at: string;
 }
 

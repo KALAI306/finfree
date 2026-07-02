@@ -151,7 +151,8 @@ export interface AISettings {
   ai_key_hf_1:         string;
   ai_key_openrouter_1: string;
   ai_persona:          string;
-  [key: string]: string;
+  app_download_url?:   string;
+  [key: string]: string | undefined;
 }
 
 export async function fetchAISettings(): Promise<AISettings> {

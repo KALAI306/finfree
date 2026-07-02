@@ -283,6 +283,7 @@ import { Modal } from "../components/Modal";
 import type { Account } from "../lib/db";
 import { exportData, downloadBackupJSON, downloadTransactionsCSV, readBackupFile, importData, type FinFreeBackup } from "../lib/exportImport";
 import { getStorageMode, setStorageMode, type StorageMode } from "../lib/storageMode";
+import { fetchAISettings } from "../lib/openai";
 import { migrateCloudToLocal } from "../lib/migration";
 
 export const Settings: React.FC = () => {
@@ -306,16 +307,31 @@ export const Settings: React.FC = () => {
   const [importing, setImporting] = useState(false);
   const [importPreview, setImportPreview] = useState<FinFreeBackup | null>(null);
   const importFileRef = useRef<HTMLInputElement>(null);
+  const [showAppBanner, setShowAppBanner] = useState(false);
+  const [appDownloadUrl, setAppDownloadUrl] = useState('');
+
+  // Fetch admin-configured app download URL
+  useEffect(() => {
+    fetchAISettings().then(s => {
+      if (s.app_download_url) setAppDownloadUrl(s.app_download_url);
+    }).catch(() => {});
+  }, []);
 
   const handleStorageModeChange = async (mode: StorageMode) => {
     setStorageMode(mode);
     setStorageModeState(mode);
-    if (mode === 'local' && user) {
-      showToast('Syncing your cloud data locally…', 'info');
-      const migrated = await migrateCloudToLocal(user.id);
-      showToast(migrated ? 'Data synced! Now using local storage.' : 'Switched to local storage.', 'success');
+    if (mode === 'local') {
+      if (!Capacitor.isNativePlatform()) {
+        setShowAppBanner(true);
+      }
+      if (user) {
+        showToast('Syncing your cloud data locally…', 'info');
+        const migrated = await migrateCloudToLocal(user.id);
+        showToast(migrated ? 'Data synced! Now using local storage.' : 'Switched to local storage.', 'success');
+      }
     } else {
-      showToast(`Switched to ${mode === 'local' ? 'Local' : 'Cloud'} storage`, 'success');
+      setShowAppBanner(false);
+      showToast('Switched to Cloud storage', 'success');
     }
     refreshData();
   };
@@ -1023,6 +1039,38 @@ export const Settings: React.FC = () => {
               <p className="text-[10px] text-muted-foreground mt-0.5">Supabase · Multi-device</p>
             </button>
           </div>
+
+          {/* Web-only banner: shown when switching to local on a browser (not the native app) */}
+          {showAppBanner && (
+            <div className="flex items-start gap-3 p-4 rounded-xl bg-amber-500/8 border border-amber-500/25">
+              <Smartphone className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold text-amber-300 mb-1">Browser storage is temporary</p>
+                <p className="text-xs text-muted-foreground leading-relaxed">
+                  Local data in your browser can be cleared when you clear cookies or storage. For permanent offline access, install the FinFree app on your phone.
+                </p>
+                <div className="flex gap-2 mt-3">
+                  {appDownloadUrl && (
+                    <a
+                      href={appDownloadUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-500 text-black text-xs font-bold hover:bg-amber-400 transition-colors"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                      Install App
+                    </a>
+                  )}
+                  <button
+                    onClick={() => setShowAppBanner(false)}
+                    className="px-3 py-1.5 rounded-lg bg-muted text-muted-foreground text-xs font-semibold hover:text-foreground transition-colors"
+                  >
+                    Continue in Browser
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Export & Import */}

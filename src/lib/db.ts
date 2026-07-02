@@ -50,6 +50,7 @@ export interface Investment {
   invested_amount: number;
   current_value: number;
   return_percent: number;
+  purchase_date?: string;
   created_at: string;
 }
 
