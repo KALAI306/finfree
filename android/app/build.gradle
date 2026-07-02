@@ -31,13 +31,20 @@ android {
         }
     }
     buildTypes {
+        // Only use the fixed key when the keystore file is present (local machine,
+        // or CI after restoring it from the KEYSTORE_BASE64 secret). Falls back to
+        // the default debug key otherwise so builds never hard-fail.
         debug {
-            signingConfig signingConfigs.finfree
+            if (file('finfree.keystore').exists()) {
+                signingConfig signingConfigs.finfree
+            }
         }
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
-            signingConfig signingConfigs.finfree
+            if (file('finfree.keystore').exists()) {
+                signingConfig signingConfigs.finfree
+            }
         }
     }
 }
