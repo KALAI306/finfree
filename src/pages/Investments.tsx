@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useApp } from "../context/AppContext";
 import { formatIndianNumberOnly } from "../lib/utils";
-import { addInvestment, deleteInvestment, updateInvestment } from "../lib/db";
+import { addInvestment, deleteInvestment, updateInvestment, addTransaction } from "../lib/db";
 import { fetchQuotes, searchSymbols, type SymbolSearchResult } from "../lib/market";
+import { getSipEntry, saveSipEntry, removeSipEntry } from "../lib/sip";
 import {
   Plus,
   TrendingUp,
@@ -37,38 +38,6 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import type { Investment } from "../lib/db";
 import { CustomSelect, NumberInput } from "../components/CustomSelect";
-
-// ── SIP data helpers (stored in localStorage) ──────────────────────────────
-const SIP_STORAGE_KEY = "investment_sip_data";
-
-interface SipData {
-  sip_amount: number;
-  sip_date: number;
-}
-
-function getSipStore(): Record<string, SipData> {
-  try {
-    return JSON.parse(localStorage.getItem(SIP_STORAGE_KEY) || "{}");
-  } catch {
-    return {};
-  }
-}
-
-function saveSipEntry(id: string, data: SipData) {
-  const store = getSipStore();
-  store[id] = data;
-  localStorage.setItem(SIP_STORAGE_KEY, JSON.stringify(store));
-}
-
-function removeSipEntry(id: string) {
-  const store = getSipStore();
-  delete store[id];
-  localStorage.setItem(SIP_STORAGE_KEY, JSON.stringify(store));
-}
-
-function getSipEntry(id: string): SipData | null {
-  return getSipStore()[id] || null;
-}
 
 // ── CAGR calculation ────────────────────────────────────────────────────────
 // Returns { cagr, years } so the display layer can show "< 1 yr" for fresh entries.
@@ -113,6 +82,7 @@ type InvestmentFormValues = z.infer<typeof investmentSchema>;
 export const Investments: React.FC = () => {
   const {
     investments,
+    accounts,
     user,
     showToast,
     refreshData,
@@ -250,6 +220,10 @@ export const Investments: React.FC = () => {
     const [sipAmount, setSipAmount] = useState(existingSip?.sip_amount?.toString() || "");
     const [sipDate, setSipDate] = useState(existingSip?.sip_date?.toString() || "1");
 
+    // Optional account the investment amount is debited from.
+    // SIP mode → auto-debited monthly on the SIP date; one-time → debited once on save.
+    const [debitAccountId, setDebitAccountId] = useState(existingSip?.account_id || "");
+
     // We manage invested_amount / current_value / quantity as local strings for NumberInput
     const [investedStr, setInvestedStr] = useState(investment?.invested_amount?.toString() || "");
     const [currentStr, setCurrentStr] = useState(investment?.current_value?.toString() || "");
@@ -373,7 +347,7 @@ export const Investments: React.FC = () => {
           savedId = investment.id;
           showToast("Investment updated successfully", "success");
         } else {
-          await addInvestment({
+          const created = await addInvestment({
             user_id: user.id,
             name: data.name,
             type: finalType,
@@ -391,19 +365,41 @@ export const Investments: React.FC = () => {
             symbol: valueMode === "linked" ? symbol : null,
             buy_price: valueMode === "linked" ? linkedBuy : null,
           });
-          savedId = "";
+          savedId = created.id;
           showToast("Investment logged successfully", "success");
         }
 
-        // Persist SIP data
+        // Persist SIP schedule (with optional auto-debit account)
         if (savedId) {
           if (sipMode === "sip" && Number(sipAmount) > 0) {
             saveSipEntry(savedId, {
               sip_amount: Number(sipAmount),
               sip_date: Math.min(28, Math.max(1, Number(sipDate) || 1)),
+              account_id: debitAccountId || undefined,
+              category: "Investment 📈",
+              name: data.name,
             });
           } else {
             removeSipEntry(savedId);
+          }
+        }
+
+        // One-time mode + linked account → debit the amount from that account now.
+        // (New investment only, so we don't double-debit on edits.)
+        if (!investment && sipMode === "onetime" && debitAccountId && Number(data.invested_amount) > 0) {
+          try {
+            await addTransaction({
+              user_id: user.id,
+              account_id: debitAccountId,
+              type: "expense",
+              amount: Number(data.invested_amount),
+              category: "Investment 📈",
+              note: `Investment · ${data.name}`,
+              date: data.purchase_date || new Date().toISOString().split("T")[0],
+              is_recurring: false,
+            });
+          } catch (e) {
+            console.warn("Investment debit transaction failed:", e);
           }
         }
 
@@ -554,6 +550,40 @@ export const Investments: React.FC = () => {
               }}
               placeholder="e.g. 5"
             />
+          </div>
+        )}
+
+        {/* Optional auto-debit account — links the investment to a real account */}
+        {accounts.length > 0 && (
+          <div className="p-3.5 bg-muted/30 border border-border rounded-xl space-y-2">
+            <CustomSelect
+              label="Debit From Account (optional)"
+              options={[
+                { value: "", label: "None — I'll track it manually" },
+                ...accounts.map((a) => ({
+                  value: a.id,
+                  label: `${a.name} · ${formatIndianCurrency(Number(a.balance))}`,
+                })),
+              ]}
+              value={debitAccountId}
+              onChange={setDebitAccountId}
+            />
+            {debitAccountId && (
+              <p className="text-[11px] text-muted-foreground leading-relaxed">
+                {sipMode === "sip" ? (
+                  <>
+                    <span className="text-emerald-400 font-semibold">Auto-debit on:</span> ₹
+                    {Number(sipAmount || 0).toLocaleString("en-IN")} will be deducted from this account
+                    every month on day {sipDate}, recorded as an expense automatically.
+                  </>
+                ) : (
+                  <>
+                    <span className="text-emerald-400 font-semibold">One-time debit:</span> the invested
+                    amount will be deducted from this account now as an expense.
+                  </>
+                )}
+              </p>
+            )}
           </div>
         )}
 

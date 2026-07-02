@@ -24,6 +24,7 @@ import type {
 import { localDb } from "../lib/localdb";
 import { getStorageMode } from "../lib/storageMode";
 import { migrateCloudToLocal } from "../lib/migration";
+import { runSipAutoDebits } from "../lib/sip";
 import confetti from "canvas-confetti";
 
 export type ToastType = "success" | "warning" | "error" | "info";
@@ -586,6 +587,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         await refreshData(user.id);
         // Auto-create recurring transactions for this month if not yet created
         await autoCreateRecurring(user.id);
+        // Auto-debit any SIPs that are due and linked to an account
+        try {
+          const done = await runSipAutoDebits(user.id, addTransaction);
+          if (done > 0) {
+            showToast(`Auto-debited ${done} SIP${done > 1 ? 's' : ''} for this month`, 'info');
+            await refreshData(user.id);
+          }
+        } catch (e) {
+          console.warn('SIP auto-debit run failed:', e);
+        }
       };
       runDataLoad();
     }

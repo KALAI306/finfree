@@ -5,11 +5,12 @@ import {
   fetchQuotes,
   searchSymbols,
   fmtQuotePrice,
-  DEFAULT_INDICES,
   INDEX_LABELS,
+  MARKET_REGIONS,
   type MarketQuote,
   type SymbolSearchResult,
 } from "../lib/market";
+import { StockDetail } from "../components/StockDetail";
 import {
   TrendingUp,
   TrendingDown,
@@ -19,6 +20,7 @@ import {
   RefreshCw,
   LineChart,
   Star,
+  ChevronRight,
 } from "lucide-react";
 
 // Shown when the user hasn't built a watchlist yet (not persisted until they add/remove)
@@ -47,6 +49,8 @@ export const Markets: React.FC = () => {
   const [quotes, setQuotes] = useState<Record<string, MarketQuote>>({});
   const [refreshing, setRefreshing] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const [region, setRegion] = useState(MARKET_REGIONS[0].key);
+  const [detailSymbol, setDetailSymbol] = useState<string | null>(null);
 
   // Search state
   const [query, setQuery] = useState("");
@@ -65,11 +69,13 @@ export const Markets: React.FC = () => {
       .finally(() => setWatchlistLoaded(true));
   }, [user?.id]);
 
-  const loadQuotes = React.useCallback(async (symbols: string[]) => {
+  const regionSymbols = MARKET_REGIONS.find((r) => r.key === region)!.symbols;
+
+  const loadQuotes = React.useCallback(async (symbols: string[], idxSymbols: string[]) => {
     setRefreshing(true);
     try {
       const [idx, wl] = await Promise.all([
-        fetchQuotes(DEFAULT_INDICES),
+        fetchQuotes(idxSymbols),
         fetchQuotes(symbols),
       ]);
       setIndices(idx.filter((q) => !q.error));
@@ -85,11 +91,11 @@ export const Markets: React.FC = () => {
   // Initial load + 60s auto-refresh (matches server cache TTL)
   useEffect(() => {
     if (!watchlistLoaded) return;
-    loadQuotes(effectiveList);
-    const t = setInterval(() => loadQuotes(effectiveList), 60_000);
+    loadQuotes(effectiveList, regionSymbols);
+    const t = setInterval(() => loadQuotes(effectiveList, regionSymbols), 60_000);
     return () => clearInterval(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [watchlistLoaded, watchlist.join(",")]);
+  }, [watchlistLoaded, watchlist.join(","), region]);
 
   // Debounced symbol search
   useEffect(() => {
@@ -141,7 +147,7 @@ export const Markets: React.FC = () => {
           </p>
         </div>
         <button
-          onClick={() => loadQuotes(effectiveList)}
+          onClick={() => loadQuotes(effectiveList, regionSymbols)}
           disabled={refreshing}
           className="ml-auto flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground border border-border rounded-lg px-3 py-1.5 transition-colors cursor-pointer disabled:opacity-50"
         >
@@ -150,17 +156,39 @@ export const Markets: React.FC = () => {
         </button>
       </div>
 
-      {/* Indices strip */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-        {(indices.length ? indices : DEFAULT_INDICES.map((s) => null)).map((q, i) =>
+      {/* Region tabs */}
+      <div className="flex items-center gap-1.5 overflow-x-auto pb-1 -mx-1 px-1">
+        {MARKET_REGIONS.map((r) => (
+          <button
+            key={r.key}
+            onClick={() => setRegion(r.key)}
+            className={`shrink-0 px-3.5 py-1.5 rounded-full text-xs font-semibold transition-colors cursor-pointer ${
+              region === r.key
+                ? "bg-primary text-primary-foreground"
+                : "bg-muted/40 text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            {r.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Indices strip — click any to open the detailed chart */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+        {(indices.length ? indices : regionSymbols.map(() => null)).map((q, i) =>
           q ? (
-            <div key={q.symbol} className="hero-card p-3.5">
-              <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
+            <button
+              key={q.symbol}
+              onClick={() => setDetailSymbol(q.symbol)}
+              className="hero-card p-3.5 text-left hover:border-primary/40 transition-colors cursor-pointer group"
+            >
+              <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1">
                 {INDEX_LABELS[q.symbol] || q.name}
+                <ChevronRight className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity" />
               </p>
               <p className="text-base font-bold text-foreground mt-1">{fmtQuotePrice(q)}</p>
               <div className="mt-1"><ChangeChip q={q} /></div>
-            </div>
+            </button>
           ) : (
             <div key={i} className="hero-card p-3.5 animate-pulse">
               <div className="h-3 w-16 bg-muted rounded" />
@@ -227,17 +255,20 @@ export const Markets: React.FC = () => {
           <div className="divide-y divide-border">
             {sortedQuotes.map((q) => (
               <div key={q.symbol} className="flex items-center gap-3 px-5 py-3.5 group">
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-semibold text-foreground truncate">{q.name}</p>
+                <button
+                  onClick={() => setDetailSymbol(q.symbol)}
+                  className="flex-1 min-w-0 text-left cursor-pointer"
+                >
+                  <p className="text-sm font-semibold text-foreground truncate hover:text-primary transition-colors">{q.name}</p>
                   <p className="text-[11px] text-muted-foreground">
                     {q.symbol} · {q.exchange}
                     {q.nav_date ? ` · NAV ${q.nav_date}` : ""}
                   </p>
-                </div>
-                <div className="text-right">
+                </button>
+                <button onClick={() => setDetailSymbol(q.symbol)} className="text-right cursor-pointer">
                   <p className="text-sm font-bold text-foreground">{fmtQuotePrice(q)}</p>
                   <ChangeChip q={q} />
-                </div>
+                </button>
                 <button
                   onClick={() => removeSymbol(q.symbol)}
                   className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-rose-400 transition-all cursor-pointer p-1"
@@ -254,6 +285,19 @@ export const Markets: React.FC = () => {
       <p className="text-[11px] text-muted-foreground text-center">
         Prices update every minute. Mutual fund NAVs update once daily. Data via NSE/BSE (Yahoo), Finnhub &amp; AMFI.
       </p>
+
+      {detailSymbol && (
+        <StockDetail
+          symbol={detailSymbol}
+          onClose={() => setDetailSymbol(null)}
+          inWatchlist={effectiveList.includes(detailSymbol)}
+          onToggleWatchlist={(sym) => {
+            const base = watchlist.length > 0 ? watchlist : STARTER_WATCHLIST;
+            if (base.includes(sym)) { persistWatchlist(base.filter((s) => s !== sym)); showToast("Removed from watchlist", "info"); }
+            else { persistWatchlist([...base, sym]); showToast("Added to watchlist", "success"); }
+          }}
+        />
+      )}
     </div>
   );
 };

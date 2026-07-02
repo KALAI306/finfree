@@ -38,6 +38,44 @@ export async function fetchQuotes(symbols: string[]): Promise<MarketQuote[]> {
   return data.quotes || [];
 }
 
+export interface ChartPoint { t: number; c: number; }
+export interface ChartData {
+  symbol: string;
+  name: string;
+  currency: string;
+  exchange: string;
+  price: number | null;
+  prev_close: number | null;
+  day_high?: number | null;
+  day_low?: number | null;
+  fifty_two_high?: number | null;
+  fifty_two_low?: number | null;
+  points: ChartPoint[];
+  source: string;
+}
+
+// Google-Finance-style ranges → Yahoo range/interval pairs
+export const CHART_RANGES: { key: string; label: string; range: string; interval: string }[] = [
+  { key: "1D",  label: "1D",  range: "1d",  interval: "5m"  },
+  { key: "5D",  label: "5D",  range: "5d",  interval: "30m" },
+  { key: "1M",  label: "1M",  range: "1mo", interval: "1d"  },
+  { key: "6M",  label: "6M",  range: "6mo", interval: "1d"  },
+  { key: "YTD", label: "YTD", range: "ytd", interval: "1d"  },
+  { key: "1Y",  label: "1Y",  range: "1y",  interval: "1d"  },
+  { key: "5Y",  label: "5Y",  range: "5y",  interval: "1wk" },
+  { key: "MAX", label: "Max", range: "max", interval: "1mo" },
+];
+
+export async function fetchChart(symbol: string, range = "1mo", interval = "1d"): Promise<ChartData> {
+  if (!WORKER_URL) throw new Error("Market data not configured");
+  const res = await fetch(
+    `${WORKER_URL}/api/market/chart?symbol=${encodeURIComponent(symbol)}&range=${range}&interval=${interval}`
+  );
+  const data = await res.json();
+  if (!res.ok || !data.ok) throw new Error(data.error || `Chart error ${res.status}`);
+  return data.chart;
+}
+
 export async function searchSymbols(q: string): Promise<SymbolSearchResult[]> {
   if (!WORKER_URL || q.trim().length < 2) return [];
   const res = await fetch(`${WORKER_URL}/api/market/search?q=${encodeURIComponent(q.trim())}`);
@@ -55,9 +93,31 @@ export function fmtQuotePrice(q: MarketQuote): string {
 /** Default indices strip shown on the Markets page. */
 export const DEFAULT_INDICES = ['^NSEI', '^BSESN', 'USDINR=X', 'BTC-USD', 'GC=F'];
 export const INDEX_LABELS: Record<string, string> = {
-  '^NSEI':   'NIFTY 50',
-  '^BSESN':  'SENSEX',
-  'USDINR=X':'USD/INR',
-  'BTC-USD': 'Bitcoin',
-  'GC=F':    'Gold',
+  '^NSEI':    'NIFTY 50',
+  '^BSESN':   'SENSEX',
+  '^NSEBANK': 'NIFTY Bank',
+  '^CNXIT':   'NIFTY IT',
+  'USDINR=X': 'USD/INR',
+  'BTC-USD':  'Bitcoin',
+  'ETH-USD':  'Ethereum',
+  'GC=F':     'Gold',
+  'CL=F':     'Crude Oil',
+  '^GSPC':    'S&P 500',
+  '^IXIC':    'Nasdaq',
+  '^DJI':     'Dow Jones',
+  '^FTSE':    'FTSE 100',
+  '^GDAXI':   'DAX',
+  '^N225':    'Nikkei 225',
+  'EURUSD=X': 'EUR/USD',
+  'GBPUSD=X': 'GBP/USD',
 };
+
+// Region tabs, Google-Finance style
+export const MARKET_REGIONS: { key: string; label: string; symbols: string[] }[] = [
+  { key: "india",  label: "India",  symbols: ["^NSEI", "^BSESN", "^NSEBANK", "^CNXIT"] },
+  { key: "us",     label: "US",     symbols: ["^GSPC", "^IXIC", "^DJI"] },
+  { key: "world",  label: "World",  symbols: ["^FTSE", "^GDAXI", "^N225"] },
+  { key: "crypto", label: "Crypto", symbols: ["BTC-USD", "ETH-USD"] },
+  { key: "fx",     label: "Currencies", symbols: ["USDINR=X", "EURUSD=X", "GBPUSD=X"] },
+  { key: "commodities", label: "Commodities", symbols: ["GC=F", "CL=F"] },
+];
