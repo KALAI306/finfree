@@ -996,7 +996,7 @@ export const Investments: React.FC = () => {
             <h4 className="text-base font-bold text-foreground m-0">Asset Allocation</h4>
           </div>
 
-          <div className="flex-1 h-56 w-full relative flex items-center justify-center">
+          <div className="h-64 w-full shrink-0 relative flex items-center justify-center">
             {activePieData.length === 0 ? (
               <div className="text-muted-foreground text-sm">No assets registered.</div>
             ) : (

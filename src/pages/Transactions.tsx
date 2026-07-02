@@ -97,7 +97,7 @@ export const TransactionForm: React.FC<{
   onClose: () => void;
   transaction?: Transaction;
 }> = ({ onClose, transaction }) => {
-  const { accounts, user, showToast, refreshData, customCategories, addCustomCategory, editCustomCategory, deleteCustomCategory, fmt: formatIndianCurrency } = useApp();
+  const { accounts, transactions, user, showToast, refreshData, customCategories, addCustomCategory, editCustomCategory, deleteCustomCategory, budgetLimits, fmt: formatIndianCurrency } = useApp();
   const [selectedType, setSelectedType] = useState<"income" | "expense" | "transfer">(
     transaction?.type || "expense"
   );
@@ -358,6 +358,36 @@ export const TransactionForm: React.FC<{
             </div>
           )}
           {errors.category && <p className="text-rose-400 text-xs mt-1">{getErrorMessage(errors.category)}</p>}
+
+          {/* Inline budget indicator — shown when this expense category has a limit set */}
+          {selectedType === "expense" && watch("category") && budgetLimits[watch("category")] > 0 && (() => {
+            const cat = watch("category");
+            const limit = budgetLimits[cat];
+            const now = new Date();
+            const spentSoFar = transactions
+              .filter(t => {
+                if (t.type !== "expense" || t.category !== cat || t.transfer_to_account_id) return false;
+                const d = new Date(t.date);
+                return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+              })
+              .reduce((s, t) => s + Number(t.amount), 0);
+            const thisAmount = Number(amountStr) || 0;
+            const projected = spentSoFar + (transaction ? 0 : thisAmount); // don't double-count when editing
+            const pct = limit > 0 ? (projected / limit) * 100 : 0;
+            const color = pct > 100 ? "text-rose-400" : pct >= 80 ? "text-amber-400" : "text-emerald-400";
+            return (
+              <p className={`text-xs mt-2 flex items-center gap-1.5 ${color}`}>
+                <span className="font-semibold">{formatIndianCurrency(spentSoFar)}</span>
+                <span className="text-muted-foreground">of</span>
+                <span className="font-semibold">{formatIndianCurrency(limit)}</span>
+                <span className="text-muted-foreground">used this month</span>
+                {pct > 100 && <span className="font-bold">— over budget!</span>}
+                {thisAmount > 0 && !transaction && (
+                  <span className="text-muted-foreground">(incl. this entry)</span>
+                )}
+              </p>
+            );
+          })()}
 
           {/* Add Custom Category Inline Sub-Form */}
           {showAddCustomCat && (

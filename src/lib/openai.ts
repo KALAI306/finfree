@@ -19,6 +19,7 @@ export function buildContextStr(
   investments:  Investment[],
   emis:         EMI[],
   goals:        Goal[],
+  budgetLimits: Record<string, number> = {},
 ): string {
   const d  = new Date();
   const cm = d.getMonth();
@@ -55,6 +56,17 @@ export function buildContextStr(
     `Investments (total ${fmt(totalInv)}):`,
     ...investments.map(i => `  • ${i.name} [ID:${i.id}] (${i.type}): invested ${fmt(Number(i.invested_amount))}, now ${fmt(Number(i.current_value || 0))}`),
     investments.length === 0 ? '  None' : '',
+    `Budgets (this month, excludes internal transfers):`,
+    ...Object.entries(budgetLimits).map(([cat, limit]) => {
+      const spent = transactions
+        .filter(t => t.type === 'expense' && t.category === cat && !t.transfer_to_account_id)
+        .filter(t => { const d2 = new Date(t.date); return d2.getMonth() === cm && d2.getFullYear() === cy; })
+        .reduce((s, t) => s + Number(t.amount), 0);
+      const pct = Number(limit) > 0 ? (spent / Number(limit)) * 100 : 0;
+      const status = pct > 100 ? 'OVER' : pct >= 80 ? 'WARNING' : 'ok';
+      return `  • ${cat}: ${fmt(spent)} / ${fmt(Number(limit))} (${pct.toFixed(0)}%, ${status})`;
+    }),
+    Object.keys(budgetLimits).length === 0 ? '  None set' : '',
     `Recent Transactions (last 20):`,
     ...transactions.slice(0, 20).map(t =>
       `  • [ID:${t.id}] ${t.date} | ${t.type === 'income' ? '+' : '-'}${fmt(Number(t.amount))} | ${t.category} | ${t.note || ''}`

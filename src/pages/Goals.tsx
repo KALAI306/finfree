@@ -12,6 +12,7 @@ import {
   Sparkles,
   Upload,
   RefreshCw,
+  Target,
 } from "lucide-react";
 import { Modal } from "../components/Modal";
 import { CustomSelect, NumberInput } from "../components/CustomSelect";
@@ -24,9 +25,8 @@ const GOAL_ICONS = ["💰", "🏠", "🚗", "✈️", "📱", "🎓", "💍", "�
 // ── Day-of-month options for auto-contribution (Improvement #8) ──────────────
 const DAY_OPTIONS = Array.from({ length: 28 }, (_, i) => ({
   value: String(i + 1),
-  label: `${i + 1}${
-    i + 1 === 1 ? "st" : i + 1 === 2 ? "nd" : i + 1 === 3 ? "rd" : "th"
-  }`,
+  label: `${i + 1}${i + 1 === 1 ? "st" : i + 1 === 2 ? "nd" : i + 1 === 3 ? "rd" : "th"
+    }`,
 }));
 
 interface SipConfig {
@@ -79,11 +79,10 @@ const GoalIconPicker: React.FC<{
           key={icon}
           type="button"
           onClick={() => onChange(value === icon ? "" : icon)}
-          className={`w-10 h-10 rounded-xl flex items-center justify-center text-xl border transition-all ${
-            value === icon
+          className={`w-10 h-10 rounded-xl flex items-center justify-center text-xl border transition-all ${value === icon
               ? "border-violet-500 bg-violet-500/15 scale-110 shadow-md"
               : "border-border bg-muted hover:border-violet-400 hover:bg-violet-500/10"
-          }`}
+            }`}
         >
           {icon}
         </button>
@@ -116,64 +115,62 @@ const AutoContributionSection: React.FC<{
   accounts,
   fmt,
 }) => {
-  const accountOptions = accounts.map((a) => ({
-    value: a.id,
-    label: `${a.name} (${fmt(a.balance)})`,
-  }));
+    const accountOptions = accounts.map((a) => ({
+      value: a.id,
+      label: `${a.name} (${fmt(a.balance)})`,
+    }));
 
-  return (
-    <div className="rounded-xl border border-border bg-muted/30 p-4 space-y-3">
-      <div className="flex items-center justify-between">
-        <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
-          <RefreshCw className="w-3.5 h-3.5 text-violet-400" />
-          Auto-Contribution (Optional)
-        </span>
-        <button
-          type="button"
-          onClick={() => setSipEnabled(!sipEnabled)}
-          className={`relative w-9 h-5 rounded-full transition-colors ${
-            sipEnabled ? "bg-violet-500" : "bg-muted-foreground/30"
-          }`}
-        >
-          <span
-            className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${
-              sipEnabled ? "translate-x-4" : "translate-x-0"
-            }`}
-          />
-        </button>
-      </div>
-
-      {sipEnabled && (
-        <div className="space-y-3">
-          <NumberInput
-            label="Monthly Amount (₹)"
-            value={sipAmount || ""}
-            onChange={setSipAmount}
-            prefix="₹"
-            placeholder="2000"
-            decimals={false}
-          />
-          <div className="grid grid-cols-2 gap-3">
-            <CustomSelect
-              label="Transfer on day"
-              options={DAY_OPTIONS}
-              value={sipDay}
-              onChange={setSipDay}
-              placeholder="Select day"
+    return (
+      <div className="rounded-xl border border-border bg-muted/30 p-4 space-y-3">
+        <div className="flex items-center justify-between">
+          <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
+            <RefreshCw className="w-3.5 h-3.5 text-violet-400" />
+            Auto-Contribution (Optional)
+          </span>
+          <button
+            type="button"
+            onClick={() => setSipEnabled(!sipEnabled)}
+            className={`relative w-9 h-5 rounded-full transition-colors ${sipEnabled ? "bg-violet-500" : "bg-muted-foreground/30"
+              }`}
+          >
+            <span
+              className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${sipEnabled ? "translate-x-4" : "translate-x-0"
+                }`}
             />
-            <CustomSelect
-              label="From account"
-              options={accountOptions}
-              value={sipAccountId}
-              onChange={setSipAccountId}
-              placeholder="Select account"
-            />
-          </div>
+          </button>
         </div>
-      )}
-    </div>
-  );
-};
+
+        {sipEnabled && (
+          <div className="space-y-3">
+            <NumberInput
+              label="Monthly Amount (₹)"
+              value={sipAmount || ""}
+              onChange={setSipAmount}
+              prefix="₹"
+              placeholder="2000"
+              decimals={false}
+            />
+            <div className="grid grid-cols-2 gap-3">
+              <CustomSelect
+                label="Transfer on day"
+                options={DAY_OPTIONS}
+                value={sipDay}
+                onChange={setSipDay}
+                placeholder="Select day"
+              />
+              <CustomSelect
+                label="From account"
+                options={accountOptions}
+                value={sipAccountId}
+                onChange={setSipAccountId}
+                placeholder="Select account"
+              />
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
 
 // ── Edit Goal inline form ────────────────────────────────────────────────────
 const EditGoalForm: React.FC<{
@@ -195,237 +192,235 @@ const EditGoalForm: React.FC<{
   accounts,
   fmt,
 }) => {
-  const [name, setName] = useState(goal.name);
-  const [target, setTarget] = useState(goal.target_amount.toString());
-  const [current, setCurrent] = useState(goal.current_amount.toString());
-  const [deadline, setDeadline] = useState(
-    goal.deadline ? goal.deadline.split("T")[0] : ""
-  );
-  const [bgUrl, setBgUrl] = useState(goalBgImages[goal.id] || "");
-  const [uploading, setUploading] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+    const [name, setName] = useState(goal.name);
+    const [target, setTarget] = useState(goal.target_amount.toString());
+    const [current, setCurrent] = useState(goal.current_amount.toString());
+    const [deadline, setDeadline] = useState(
+      goal.deadline ? goal.deadline.split("T")[0] : ""
+    );
+    const [bgUrl, setBgUrl] = useState(goalBgImages[goal.id] || "");
+    const [uploading, setUploading] = useState(false);
+    const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Icon state
-  const [goalIcon, setGoalIconState] = useState(() => loadIcon(goal.id));
+    // Icon state
+    const [goalIcon, setGoalIconState] = useState(() => loadIcon(goal.id));
 
-  // SIP state
-  const existingSip = loadSip(goal.id);
-  const [sipEnabled, setSipEnabled] = useState(!!existingSip);
-  const [sipAmount, setSipAmount] = useState(
-    existingSip ? String(existingSip.monthlyAmount) : ""
-  );
-  const [sipDay, setSipDay] = useState(existingSip?.day || "");
-  const [sipAccountId, setSipAccountId] = useState(existingSip?.accountId || "");
+    // SIP state
+    const existingSip = loadSip(goal.id);
+    const [sipEnabled, setSipEnabled] = useState(!!existingSip);
+    const [sipAmount, setSipAmount] = useState(
+      existingSip ? String(existingSip.monthlyAmount) : ""
+    );
+    const [sipDay, setSipDay] = useState(existingSip?.day || "");
+    const [sipAccountId, setSipAccountId] = useState(existingSip?.accountId || "");
 
-  const PRESET_GOAL_BGS = [
-    {
-      name: "Emergency 🛡️",
-      url: "https://images.unsplash.com/photo-1579621970795-87faff3f0768?auto=format&fit=crop&w=400&q=80",
-    },
-    {
-      name: "House 🏠",
-      url: "https://images.unsplash.com/photo-1570129477492-45c003edd2be?auto=format&fit=crop&w=400&q=80",
-    },
-    {
-      name: "Car/Bike 🚗",
-      url: "https://images.unsplash.com/photo-1533473359331-0135ef1b58bf?auto=format&fit=crop&w=400&q=80",
-    },
-    {
-      name: "Gadgets 💻",
-      url: "https://images.unsplash.com/photo-1591488320449-011701bb6704?auto=format&fit=crop&w=400&q=80",
-    },
-    {
-      name: "Travel ✈️",
-      url: "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=400&q=80",
-    },
-    {
-      name: "Education 🎓",
-      url: "https://images.unsplash.com/photo-1523050854058-8df90110c9f1?auto=format&fit=crop&w=400&q=80",
-    },
-  ];
+    const PRESET_GOAL_BGS = [
+      {
+        name: "Emergency 🛡️",
+        url: "https://images.unsplash.com/photo-1579621970795-87faff3f0768?auto=format&fit=crop&w=400&q=80",
+      },
+      {
+        name: "House 🏠",
+        url: "https://images.unsplash.com/photo-1570129477492-45c003edd2be?auto=format&fit=crop&w=400&q=80",
+      },
+      {
+        name: "Car/Bike 🚗",
+        url: "https://images.unsplash.com/photo-1533473359331-0135ef1b58bf?auto=format&fit=crop&w=400&q=80",
+      },
+      {
+        name: "Gadgets 💻",
+        url: "https://images.unsplash.com/photo-1591488320449-011701bb6704?auto=format&fit=crop&w=400&q=80",
+      },
+      {
+        name: "Travel ✈️",
+        url: "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=400&q=80",
+      },
+      {
+        name: "Education 🎓",
+        url: "https://images.unsplash.com/photo-1523050854058-8df90110c9f1?auto=format&fit=crop&w=400&q=80",
+      },
+    ];
 
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setUploading(true);
-    try {
-      const base64Data = await compressImage(file, 800, 600, 0.7);
-      setBgUrl(base64Data);
-      showToast("Background image compressed & loaded!", "success");
-    } catch {
-      showToast("Failed to parse image file", "error");
-    } finally {
-      setUploading(false);
-    }
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!name || !target) {
-      showToast("Please fill in goal name and target", "warning");
-      return;
-    }
-    try {
-      await updateGoal({
-        id: goal.id,
-        name,
-        target_amount: Number(target),
-        current_amount: Number(current),
-        deadline: deadline || null,
-      });
-      updateGoalBgImage(goal.id, bgUrl);
-      saveIcon(goal.id, goalIcon);
-
-      if (sipEnabled && sipAmount && sipDay && sipAccountId) {
-        saveSip(goal.id, {
-          monthlyAmount: Number(sipAmount),
-          day: sipDay,
-          accountId: sipAccountId,
-        });
-      } else {
-        clearSip(goal.id);
+    const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      setUploading(true);
+      try {
+        const base64Data = await compressImage(file, 800, 600, 0.7);
+        setBgUrl(base64Data);
+        showToast("Background image compressed & loaded!", "success");
+      } catch {
+        showToast("Failed to parse image file", "error");
+      } finally {
+        setUploading(false);
       }
+    };
 
-      showToast("Goal updated successfully", "success");
-      refreshData();
-      onClose();
-    } catch {
-      showToast("Failed to update goal", "error");
-    }
-  };
+    const handleSubmit = async (e: React.FormEvent) => {
+      e.preventDefault();
+      if (!name || !target) {
+        showToast("Please fill in goal name and target", "warning");
+        return;
+      }
+      try {
+        await updateGoal({
+          id: goal.id,
+          name,
+          target_amount: Number(target),
+          current_amount: Number(current),
+          deadline: deadline || null,
+        });
+        updateGoalBgImage(goal.id, bgUrl);
+        saveIcon(goal.id, goalIcon);
 
-  return (
-    <form onSubmit={handleSubmit} className="space-y-4">
-      <div>
-        <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider block mb-1">
-          Goal Name
-        </label>
-        <input
-          type="text"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          className="w-full bg-background border border-border rounded-xl min-h-[48px] py-3 px-3.5 text-foreground text-sm focus:outline-none focus:border-gold-500"
-        />
-      </div>
+        if (sipEnabled && sipAmount && sipDay && sipAccountId) {
+          saveSip(goal.id, {
+            monthlyAmount: Number(sipAmount),
+            day: sipDay,
+            accountId: sipAccountId,
+          });
+        } else {
+          clearSip(goal.id);
+        }
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <NumberInput
-          label="Target (₹)"
-          value={target || ""}
-          onChange={setTarget}
-          prefix="₹"
-          decimals={false}
-        />
-        <NumberInput
-          label="Current (₹)"
-          value={current || ""}
-          onChange={setCurrent}
-          prefix="₹"
-          decimals={false}
-        />
+        showToast("Goal updated successfully", "success");
+        refreshData();
+        onClose();
+      } catch {
+        showToast("Failed to update goal", "error");
+      }
+    };
+
+    return (
+      <form onSubmit={handleSubmit} className="space-y-4">
         <div>
           <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider block mb-1">
-            Target Date
+            Goal Name
           </label>
           <input
-            type="date"
-            value={deadline}
-            onChange={(e) => setDeadline(e.target.value)}
+            type="text"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
             className="w-full bg-background border border-border rounded-xl min-h-[48px] py-3 px-3.5 text-foreground text-sm focus:outline-none focus:border-gold-500"
           />
         </div>
-      </div>
 
-      {/* #9 — Goal category icons */}
-      <GoalIconPicker value={goalIcon} onChange={setGoalIconState} />
-
-      {/* Background image */}
-      <div>
-        <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider block mb-1">
-          Background Image URL
-        </label>
-        <input
-          type="text"
-          placeholder="Paste avatar URL or select preset below"
-          value={bgUrl}
-          onChange={(e) => setBgUrl(e.target.value)}
-          className="w-full bg-background border border-border rounded-xl min-h-[48px] py-3 px-3.5 text-foreground text-sm focus:outline-none focus:border-gold-500 mb-2"
-        />
-        <div className="flex gap-2 items-center flex-wrap">
-          {PRESET_GOAL_BGS.map((bg, idx) => (
-            <button
-              key={idx}
-              type="button"
-              onClick={() => setBgUrl(bg.url)}
-              className={`px-2 py-1 rounded-lg bg-muted text-[10px] font-bold text-muted-foreground border hover:text-foreground border-border ${
-                bgUrl === bg.url
-                  ? "border-violet-600 text-gold-400 dark:text-gold-300"
-                  : "border-transparent"
-              }`}
-            >
-              {bg.name.split(" ")[0]}
-            </button>
-          ))}
-          <button
-            type="button"
-            onClick={() => setBgUrl("")}
-            className={`px-2 py-1 rounded-lg bg-muted text-[10px] font-bold text-muted-foreground border border-border hover:text-foreground ${
-              !bgUrl ? "border-violet-600" : "border-transparent"
-            }`}
-          >
-            No Image
-          </button>
-          <input
-            type="file"
-            ref={fileInputRef}
-            accept="image/*"
-            onChange={handleFileUpload}
-            className="hidden"
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <NumberInput
+            label="Target (₹)"
+            value={target || ""}
+            onChange={setTarget}
+            prefix="₹"
+            decimals={false}
           />
+          <NumberInput
+            label="Current (₹)"
+            value={current || ""}
+            onChange={setCurrent}
+            prefix="₹"
+            decimals={false}
+          />
+          <div>
+            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider block mb-1">
+              Target Date
+            </label>
+            <input
+              type="date"
+              value={deadline}
+              onChange={(e) => setDeadline(e.target.value)}
+              className="w-full bg-background border border-border rounded-xl min-h-[48px] py-3 px-3.5 text-foreground text-sm focus:outline-none focus:border-gold-500"
+            />
+          </div>
+        </div>
+
+        {/* #9 — Goal category icons */}
+        <GoalIconPicker value={goalIcon} onChange={setGoalIconState} />
+
+        {/* Background image */}
+        <div>
+          <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider block mb-1">
+            Background Image URL
+          </label>
+          <input
+            type="text"
+            placeholder="Paste avatar URL or select preset below"
+            value={bgUrl}
+            onChange={(e) => setBgUrl(e.target.value)}
+            className="w-full bg-background border border-border rounded-xl min-h-[48px] py-3 px-3.5 text-foreground text-sm focus:outline-none focus:border-gold-500 mb-2"
+          />
+          <div className="flex gap-2 items-center flex-wrap">
+            {PRESET_GOAL_BGS.map((bg, idx) => (
+              <button
+                key={idx}
+                type="button"
+                onClick={() => setBgUrl(bg.url)}
+                className={`px-2 py-1 rounded-lg bg-muted text-[10px] font-bold text-muted-foreground border hover:text-foreground border-border ${bgUrl === bg.url
+                    ? "border-violet-600 text-gold-400 dark:text-gold-300"
+                    : "border-transparent"
+                  }`}
+              >
+                {bg.name.split(" ")[0]}
+              </button>
+            ))}
+            <button
+              type="button"
+              onClick={() => setBgUrl("")}
+              className={`px-2 py-1 rounded-lg bg-muted text-[10px] font-bold text-muted-foreground border border-border hover:text-foreground ${!bgUrl ? "border-violet-600" : "border-transparent"
+                }`}
+            >
+              No Image
+            </button>
+            <input
+              type="file"
+              ref={fileInputRef}
+              accept="image/*"
+              onChange={handleFileUpload}
+              className="hidden"
+            />
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={uploading}
+              className="px-2 py-1 rounded-lg bg-muted text-[10px] font-bold text-muted-foreground border border-border hover:text-foreground border-transparent flex items-center gap-1 transition-all"
+            >
+              <Upload className="w-3 h-3 text-gold-400" />
+              {uploading ? "Compressing..." : "Upload File"}
+            </button>
+          </div>
+        </div>
+
+        {/* #8 — Auto-contribution */}
+        <AutoContributionSection
+          sipEnabled={sipEnabled}
+          setSipEnabled={setSipEnabled}
+          sipAmount={sipAmount}
+          setSipAmount={setSipAmount}
+          sipDay={sipDay}
+          setSipDay={setSipDay}
+          sipAccountId={sipAccountId}
+          setSipAccountId={setSipAccountId}
+          accounts={accounts}
+          fmt={fmt}
+        />
+
+        <div className="flex gap-3 mt-6 pt-4 border-t border-border">
           <button
             type="button"
-            onClick={() => fileInputRef.current?.click()}
-            disabled={uploading}
-            className="px-2 py-1 rounded-lg bg-muted text-[10px] font-bold text-muted-foreground border border-border hover:text-foreground border-transparent flex items-center gap-1 transition-all"
+            onClick={onClose}
+            className="flex-1 bg-muted hover:bg-muted/80 border border-border text-foreground font-semibold py-3 rounded-xl transition-all text-sm"
           >
-            <Upload className="w-3 h-3 text-gold-400" />
-            {uploading ? "Compressing..." : "Upload File"}
+            Cancel
+          </button>
+          <button
+            type="submit"
+            className="flex-1 bg-gold-500 hover:bg-gold-600 text-white font-semibold py-3 rounded-xl transition-all shadow-lg hover:shadow-gold-500/30 text-sm"
+          >
+            Save Changes
           </button>
         </div>
-      </div>
-
-      {/* #8 — Auto-contribution */}
-      <AutoContributionSection
-        sipEnabled={sipEnabled}
-        setSipEnabled={setSipEnabled}
-        sipAmount={sipAmount}
-        setSipAmount={setSipAmount}
-        sipDay={sipDay}
-        setSipDay={setSipDay}
-        sipAccountId={sipAccountId}
-        setSipAccountId={setSipAccountId}
-        accounts={accounts}
-        fmt={fmt}
-      />
-
-      <div className="flex gap-3 mt-6 pt-4 border-t border-border">
-        <button
-          type="button"
-          onClick={onClose}
-          className="flex-1 bg-muted hover:bg-muted/80 border border-border text-foreground font-semibold py-3 rounded-xl transition-all text-sm"
-        >
-          Cancel
-        </button>
-        <button
-          type="submit"
-          className="flex-1 bg-gold-500 hover:bg-gold-600 text-white font-semibold py-3 rounded-xl transition-all shadow-lg hover:shadow-gold-500/30 text-sm"
-        >
-          Save Changes
-        </button>
-      </div>
-    </form>
-  );
-};
+      </form>
+    );
+  };
 
 // ── Main component ───────────────────────────────────────────────────────────
 export const Goals: React.FC = () => {
@@ -637,10 +632,14 @@ export const Goals: React.FC = () => {
     label: `${a.name} (${formatIndianCurrency(a.balance)})`,
   }));
 
+  const totalGoalTarget = goals.reduce((s, g) => s + Number(g.target_amount), 0);
+  const totalGoalCurrent = goals.reduce((s, g) => s + Number(g.current_amount), 0);
+  const completedCount = goals.filter((g) => Number(g.current_amount) >= Number(g.target_amount)).length;
+
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex justify-between items-center">
+      <div className="flex justify-between items-center flex-wrap gap-3">
         <div>
           <h2 className="text-2xl md:text-3xl font-extrabold m-0 text-foreground">
             Goals
@@ -658,27 +657,43 @@ export const Goals: React.FC = () => {
         </button>
       </div>
 
-      {/* Surplus banner */}
-      <div className="p-4 rounded-xl bg-violet-950/10 border border-gold-500/12 flex items-center justify-between text-xs md:text-sm">
-        <span className="text-gold-400 dark:text-gold-300">
-          Current Monthly Surplus for Goals:{" "}
-          <strong className="text-foreground">
-            {formatIndianCurrency(monthlySurplus)}
-          </strong>
-        </span>
-        <span className="text-muted-foreground">
-          Estimated:{" "}
-          <strong className="text-gold-400 dark:text-gold-400">
-            {formatIndianCurrency(goalAllocation)}
-          </strong>{" "}
-          per goal / month
-        </span>
-      </div>
+      {/* Summary stats */}
+      {goals.length > 0 && (
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <div className="glass-card rounded-2xl p-4 border border-border">
+            <p className="text-[11px] text-muted-foreground uppercase tracking-wider font-semibold">Saved So Far</p>
+            <p className="text-lg font-bold text-foreground mt-1 truncate">{formatIndianCurrency(totalGoalCurrent)}</p>
+          </div>
+          <div className="glass-card rounded-2xl p-4 border border-border">
+            <p className="text-[11px] text-muted-foreground uppercase tracking-wider font-semibold">Total Target</p>
+            <p className="text-lg font-bold text-foreground mt-1 truncate">{formatIndianCurrency(totalGoalTarget)}</p>
+          </div>
+          <div className="glass-card rounded-2xl p-4 border border-border">
+            <p className="text-[11px] text-muted-foreground uppercase tracking-wider font-semibold">Completed</p>
+            <p className="text-lg font-bold text-emerald-400 mt-1">{completedCount} / {goals.length}</p>
+          </div>
+          <div className="glass-card rounded-2xl p-4 border border-gold-500/20 bg-gold-500/[0.03]">
+            <p className="text-[11px] text-gold-400 dark:text-gold-300 uppercase tracking-wider font-semibold">Monthly Surplus</p>
+            <p className="text-lg font-bold text-foreground mt-1 truncate">{formatIndianCurrency(monthlySurplus)}</p>
+          </div>
+        </div>
+      )}
 
       {/* Goal cards */}
       {goals.length === 0 ? (
-        <div className="glass-card rounded-2xl py-16 text-center text-muted-foreground border border-border">
-          No goals established yet. Create one above.
+        <div className="glass-card rounded-2xl py-16 px-6 text-center border border-border space-y-3">
+          <Target className="w-10 h-10 mx-auto text-muted-foreground/40" />
+          <p className="text-foreground font-semibold">No goals yet</p>
+          <p className="text-muted-foreground text-sm max-w-xs mx-auto">
+            Create a savings goal — an emergency fund, a trip, a gadget — and track your progress toward it every month.
+          </p>
+          <button
+            onClick={() => setIsAddGoalOpen(true)}
+            className="btn-gold inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm cursor-pointer mt-2"
+          >
+            <Plus className="w-4 h-4" />
+            Create Your First Goal
+          </button>
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -741,20 +756,22 @@ export const Goals: React.FC = () => {
                       Target: {formatIndianCurrency(tar, false)}
                     </span>
                   </div>
-                  <div className="flex gap-1 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <div className="flex gap-1 shrink-0">
                     <button
                       onClick={() => setEditingGoal(g)}
-                      className="p-1 text-muted-foreground hover:text-gold-400 hover:bg-gold-400/10 rounded-lg transition-colors"
+                      className="w-9 h-9 flex items-center justify-center text-muted-foreground hover:text-gold-400 hover:bg-gold-400/10 rounded-lg transition-colors cursor-pointer"
                       title="Edit Goal"
+                      aria-label="Edit goal"
                     >
-                      <Edit2 className="w-4.5 h-4.5" />
+                      <Edit2 className="w-4 h-4" />
                     </button>
                     <button
                       onClick={() => handleDeleteGoal(g.id)}
-                      className="p-1 text-muted-foreground hover:text-rose-500 hover:bg-rose-500/10 rounded-lg transition-colors"
+                      className="w-9 h-9 flex items-center justify-center text-muted-foreground hover:text-rose-500 hover:bg-rose-500/10 rounded-lg transition-colors cursor-pointer"
                       title="Delete Goal"
+                      aria-label="Delete goal"
                     >
-                      <Trash2 className="w-4.5 h-4.5" />
+                      <Trash2 className="w-4 h-4" />
                     </button>
                   </div>
                 </div>
@@ -768,10 +785,10 @@ export const Goals: React.FC = () => {
                       {Number(sip.day) === 1
                         ? "st"
                         : Number(sip.day) === 2
-                        ? "nd"
-                        : Number(sip.day) === 3
-                        ? "rd"
-                        : "th"}
+                          ? "nd"
+                          : Number(sip.day) === 3
+                            ? "rd"
+                            : "th"}
                       {sipAccount ? ` · ${sipAccount.name}` : ""}
                     </span>
                   </div>
@@ -804,17 +821,30 @@ export const Goals: React.FC = () => {
                     </span>
                   </div>
 
-                  <div className="space-y-1 min-w-0">
+                  <div className="space-y-1 min-w-0 flex-1">
                     <span className="text-muted-foreground text-[10px] uppercase font-bold block">
                       Current Balance
                     </span>
                     <span className="text-lg font-extrabold text-foreground block">
                       {formatIndianCurrency(cur)}
                     </span>
+                    {!isCompleted && (
+                      <span className="text-[11px] text-muted-foreground block truncate">
+                        {formatIndianCurrency(remaining)} to go
+                      </span>
+                    )}
                     <span className="text-[11px] font-medium text-gold-400 dark:text-gold-400 block truncate">
                       {daysToCompletionStr}
                     </span>
                   </div>
+                </div>
+
+                {/* Linear progress bar — quick-glance status alongside the ring */}
+                <div className="relative z-10 h-1.5 w-full bg-muted rounded-full overflow-hidden -mt-3">
+                  <div
+                    className={`h-full rounded-full transition-all duration-700 ${isCompleted ? "bg-emerald-500" : "bg-violet-500"}`}
+                    style={{ width: `${Math.min(100, progress)}%` }}
+                  />
                 </div>
 
                 {!isCompleted ? (
@@ -823,7 +853,7 @@ export const Goals: React.FC = () => {
                       setSelectedGoal(g);
                       setIsAddFundsOpen(true);
                     }}
-                    className="w-full bg-muted hover:bg-gold-500 border border-border text-foreground hover:text-white font-semibold py-2 rounded-xl transition-all flex items-center justify-center gap-1.5 text-xs hover:shadow-lg hover:shadow-violet-600/20 relative z-10"
+                    className="w-full bg-muted hover:bg-gold-500 border border-border text-foreground hover:text-white font-semibold py-2.5 min-h-[44px] rounded-xl transition-all flex items-center justify-center gap-1.5 text-xs hover:shadow-lg hover:shadow-violet-600/20 relative z-10 cursor-pointer"
                   >
                     <Coins className="w-4 h-4" />
                     Allocate Funds
@@ -903,11 +933,10 @@ export const Goals: React.FC = () => {
                   key={idx}
                   type="button"
                   onClick={() => setNewGoalBgUrl(bg.url)}
-                  className={`px-2 py-1 rounded-lg bg-muted text-[10px] font-bold text-muted-foreground border hover:text-foreground border-border ${
-                    newGoalBgUrl === bg.url
+                  className={`px-2 py-1 rounded-lg bg-muted text-[10px] font-bold text-muted-foreground border hover:text-foreground border-border ${newGoalBgUrl === bg.url
                       ? "border-violet-600 text-gold-400 dark:text-gold-300"
                       : "border-transparent"
-                  }`}
+                    }`}
                 >
                   {bg.name}
                 </button>
@@ -915,9 +944,8 @@ export const Goals: React.FC = () => {
               <button
                 type="button"
                 onClick={() => setNewGoalBgUrl("")}
-                className={`px-2 py-1 rounded-lg bg-muted text-[10px] font-bold text-muted-foreground border border-border hover:text-foreground ${
-                  !newGoalBgUrl ? "border-violet-600" : "border-transparent"
-                }`}
+                className={`px-2 py-1 rounded-lg bg-muted text-[10px] font-bold text-muted-foreground border border-border hover:text-foreground ${!newGoalBgUrl ? "border-violet-600" : "border-transparent"
+                  }`}
               >
                 No Image
               </button>
@@ -1013,7 +1041,7 @@ export const Goals: React.FC = () => {
                 Remaining target:{" "}
                 {formatIndianCurrency(
                   Number(selectedGoal.target_amount) -
-                    Number(selectedGoal.current_amount)
+                  Number(selectedGoal.current_amount)
                 )}
               </span>
             )}

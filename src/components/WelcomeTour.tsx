@@ -124,20 +124,25 @@ export const WelcomeTour: React.FC<WelcomeTourProps> = ({ onComplete }) => {
                 <div>
                   <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider block mb-1">Age</label>
                   <input
-                    type="number"
+                    type="text"
+                    inputMode="numeric"
+                    autoComplete="off"
                     value={profile.age}
-                    onChange={e => setProfile(p => ({ ...p, age: e.target.value }))}
+                    onFocus={e => e.target.select()}
+                    onChange={e => { if (/^[0-9]*$/.test(e.target.value)) setProfile(p => ({ ...p, age: e.target.value })); }}
                     placeholder="21"
-                    min={10} max={80}
                     className="w-full bg-background border border-border rounded-xl py-2.5 px-3 text-sm text-foreground focus:outline-none focus:border-primary/60"
                   />
                 </div>
                 <div>
                   <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider block mb-1">Monthly Salary (₹)</label>
                   <input
-                    type="number"
+                    type="text"
+                    inputMode="numeric"
+                    autoComplete="off"
                     value={profile.monthly_salary}
-                    onChange={e => setProfile(p => ({ ...p, monthly_salary: e.target.value }))}
+                    onFocus={e => e.target.select()}
+                    onChange={e => { if (/^[0-9]*$/.test(e.target.value)) setProfile(p => ({ ...p, monthly_salary: e.target.value })); }}
                     placeholder="20000"
                     className="w-full bg-background border border-border rounded-xl py-2.5 px-3 text-sm text-foreground focus:outline-none focus:border-primary/60"
                   />
@@ -146,9 +151,12 @@ export const WelcomeTour: React.FC<WelcomeTourProps> = ({ onComplete }) => {
               <div>
                 <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider block mb-1">Total Debt / Loans (₹)</label>
                 <input
-                  type="number"
+                  type="text"
+                  inputMode="numeric"
+                  autoComplete="off"
                   value={profile.family_debt}
-                  onChange={e => setProfile(p => ({ ...p, family_debt: e.target.value }))}
+                  onFocus={e => e.target.select()}
+                  onChange={e => { if (/^[0-9]*$/.test(e.target.value)) setProfile(p => ({ ...p, family_debt: e.target.value })); }}
                   placeholder="0"
                   className="w-full bg-background border border-border rounded-xl py-2.5 px-3 text-sm text-foreground focus:outline-none focus:border-primary/60"
                 />

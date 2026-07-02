@@ -49,6 +49,33 @@ export const FreedomCalculator: React.FC = () => {
     }
   }, [profile]);
 
+  // Text-buffer state for the number fields below — a bare `type="number"` bound
+  // directly to a number snaps to "0" on every keystroke, making backspace/retyping
+  // unusable on mobile. These buffers tolerate an empty string mid-edit.
+  const [monthlySalaryStr, setMonthlySalaryStr]     = useState(String(monthlySalary));
+  const [monthlyExpensesStr, setMonthlyExpensesStr] = useState(String(monthlyExpenses));
+  const [monthlySIPStr, setMonthlySIPStr]           = useState(String(monthlySIP));
+  const [expectedReturnStr, setExpectedReturnStr]   = useState(String(expectedReturn));
+  const [salaryGrowthStr, setSalaryGrowthStr]       = useState(String(salaryGrowth));
+
+  useEffect(() => { setMonthlySalaryStr(String(monthlySalary)); }, [monthlySalary]);
+  useEffect(() => { setMonthlyExpensesStr(String(monthlyExpenses)); }, [monthlyExpenses]);
+  useEffect(() => { setMonthlySIPStr(String(monthlySIP)); }, [monthlySIP]);
+  useEffect(() => { setExpectedReturnStr(String(expectedReturn)); }, [expectedReturn]);
+  useEffect(() => { setSalaryGrowthStr(String(salaryGrowth)); }, [salaryGrowth]);
+
+  const handleBufferedNumber = (
+    raw: string,
+    setStr: (v: string) => void,
+    setNum: (v: number) => void,
+    decimals: boolean
+  ) => {
+    const re = decimals ? /^[0-9]*\.?[0-9]*$/ : /^[0-9]*$/;
+    if (!re.test(raw)) return;
+    setStr(raw);
+    if (raw !== "" && raw !== ".") setNum(Number(raw));
+  };
+
   // General solver function for years to reach freedom
   const solveFreedomAge = (
     startAge: number,
@@ -227,12 +254,14 @@ export const FreedomCalculator: React.FC = () => {
               <div className="flex items-center gap-1 bg-background border border-border rounded-lg px-2 py-0.5 text-foreground text-xs font-bold">
                 <span className="text-muted-foreground text-[10px]">₹</span>
                 <input
-                  type="number"
-                  min="15000"
-                  max="1000000"
-                  value={monthlySalary}
-                  onChange={(e) => setMonthlySalary(Number(e.target.value))}
-                  className="w-16 bg-transparent text-foreground text-right focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                  type="text"
+                  inputMode="numeric"
+                  autoComplete="off"
+                  value={monthlySalaryStr}
+                  onFocus={(e) => e.target.select()}
+                  onChange={(e) => handleBufferedNumber(e.target.value, setMonthlySalaryStr, setMonthlySalary, false)}
+                  onBlur={() => { if (monthlySalaryStr === "") setMonthlySalary(15000); }}
+                  className="w-16 bg-transparent text-foreground text-right focus:outline-none"
                 />
               </div>
             </div>
@@ -258,12 +287,14 @@ export const FreedomCalculator: React.FC = () => {
               <div className="flex items-center gap-1 bg-background border border-border rounded-lg px-2 py-0.5 text-foreground text-xs font-bold">
                 <span className="text-muted-foreground text-[10px]">₹</span>
                 <input
-                  type="number"
-                  min="0"
-                  max="1000000"
-                  value={monthlyExpenses}
-                  onChange={(e) => setMonthlyExpenses(Number(e.target.value))}
-                  className="w-16 bg-transparent text-foreground text-right focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                  type="text"
+                  inputMode="numeric"
+                  autoComplete="off"
+                  value={monthlyExpensesStr}
+                  onFocus={(e) => e.target.select()}
+                  onChange={(e) => handleBufferedNumber(e.target.value, setMonthlyExpensesStr, setMonthlyExpenses, false)}
+                  onBlur={() => { if (monthlyExpensesStr === "") setMonthlyExpenses(0); }}
+                  className="w-16 bg-transparent text-foreground text-right focus:outline-none"
                 />
               </div>
             </div>
@@ -289,12 +320,14 @@ export const FreedomCalculator: React.FC = () => {
               <div className="flex items-center gap-1 bg-background border border-border rounded-lg px-2 py-0.5 text-foreground text-xs font-bold">
                 <span className="text-muted-foreground text-[10px]">₹</span>
                 <input
-                  type="number"
-                  min="0"
-                  max="1000000"
-                  value={monthlySIP}
-                  onChange={(e) => setMonthlySIP(Number(e.target.value))}
-                  className="w-16 bg-transparent text-foreground text-right focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                  type="text"
+                  inputMode="numeric"
+                  autoComplete="off"
+                  value={monthlySIPStr}
+                  onFocus={(e) => e.target.select()}
+                  onChange={(e) => handleBufferedNumber(e.target.value, setMonthlySIPStr, setMonthlySIP, false)}
+                  onBlur={() => { if (monthlySIPStr === "") setMonthlySIP(0); }}
+                  className="w-16 bg-transparent text-foreground text-right focus:outline-none"
                 />
               </div>
             </div>
@@ -319,13 +352,14 @@ export const FreedomCalculator: React.FC = () => {
               <span className="text-muted-foreground">Expected ROI (p.a.)</span>
               <div className="flex items-center gap-1 bg-background border border-border rounded-lg px-2 py-0.5 text-foreground text-xs font-bold">
                 <input
-                  type="number"
-                  step="0.5"
-                  min="0"
-                  max="100"
-                  value={expectedReturn}
-                  onChange={(e) => setExpectedReturn(Number(e.target.value))}
-                  className="w-10 bg-transparent text-foreground text-right focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                  type="text"
+                  inputMode="decimal"
+                  autoComplete="off"
+                  value={expectedReturnStr}
+                  onFocus={(e) => e.target.select()}
+                  onChange={(e) => handleBufferedNumber(e.target.value, setExpectedReturnStr, setExpectedReturn, true)}
+                  onBlur={() => { if (expectedReturnStr === "" || expectedReturnStr === ".") setExpectedReturn(0); }}
+                  className="w-10 bg-transparent text-foreground text-right focus:outline-none"
                 />
                 <span className="text-muted-foreground text-[10px]">%</span>
               </div>
@@ -351,12 +385,14 @@ export const FreedomCalculator: React.FC = () => {
               <span className="text-muted-foreground">Annual Salary Growth</span>
               <div className="flex items-center gap-1 bg-background border border-border rounded-lg px-2 py-0.5 text-foreground text-xs font-bold">
                 <input
-                  type="number"
-                  min="0"
-                  max="100"
-                  value={salaryGrowth}
-                  onChange={(e) => setSalaryGrowth(Number(e.target.value))}
-                  className="w-10 bg-transparent text-foreground text-right focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                  type="text"
+                  inputMode="numeric"
+                  autoComplete="off"
+                  value={salaryGrowthStr}
+                  onFocus={(e) => e.target.select()}
+                  onChange={(e) => handleBufferedNumber(e.target.value, setSalaryGrowthStr, setSalaryGrowth, false)}
+                  onBlur={() => { if (salaryGrowthStr === "") setSalaryGrowth(0); }}
+                  className="w-10 bg-transparent text-foreground text-right focus:outline-none"
                 />
                 <span className="text-muted-foreground text-[10px]">%</span>
               </div>

@@ -23,6 +23,7 @@ import {
   Shield,
   Bot,
   LineChart,
+  PiggyBank,
 } from "lucide-react";
 import { FloatingAiAssistant } from "./ui/glowing-ai-chat-assistant";
 import { WelcomeTour } from "./WelcomeTour";
@@ -44,6 +45,7 @@ const navItems = [
   { path: "/emi",        label: "EMI",         icon: Calendar   },
   { path: "/freedom",    label: "Freedom",     icon: Flame      },
   { path: "/goals",      label: "Goals",       icon: Target     },
+  { path: "/budgets",    label: "Budgets",     icon: PiggyBank  },
   { path: "/rules",      label: "Rules",       icon: ShieldCheck },
   { path: "/reports",    label: "Reports",     icon: BarChart3  },
 ];

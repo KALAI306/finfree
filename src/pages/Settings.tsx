@@ -291,10 +291,10 @@ export const Settings: React.FC = () => {
   
   // Profile settings state
   const [profileName, setProfileName] = useState(profile?.name || "Kalai");
-  const [profileAge, setProfileAge] = useState(profile?.age || 23);
-  const [profileSalary, setProfileSalary] = useState(profile?.monthly_salary || 20000);
-  const [profileTarget, setProfileTarget] = useState(profile?.freedom_target || 9000000);
-  const [familyDebt, setFamilyDebt] = useState(profile?.family_debt || 228116);
+  const [profileAge, setProfileAge] = useState<number | ''>(profile?.age || 23);
+  const [profileSalary, setProfileSalary] = useState<number | ''>(profile?.monthly_salary || 20000);
+  const [profileTarget, setProfileTarget] = useState<number | ''>(profile?.freedom_target || 9000000);
+  const [familyDebt, setFamilyDebt] = useState<number | ''>(profile?.family_debt || 228116);
   const [profileImgUrl, setProfileImgUrl] = useState(profileImage || "");
   const [savingProfile, setSavingProfile] = useState(false);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
@@ -760,9 +760,12 @@ export const Settings: React.FC = () => {
               <div>
                 <label className="text-xs text-muted-foreground block mb-1">Age</label>
                 <input
-                  type="number"
+                  type="text"
+                  inputMode="numeric"
+                  autoComplete="off"
                   value={profileAge}
-                  onChange={(e) => setProfileAge(Number(e.target.value))}
+                  onFocus={(e) => e.target.select()}
+                  onChange={(e) => { const v = e.target.value; if (/^[0-9]*$/.test(v)) setProfileAge(v === "" ? "" : Number(v)); }}
                   className="w-full bg-background border border-border rounded-xl py-2 px-3 text-foreground text-sm focus:outline-none focus:border-gold-500"
                 />
               </div>
@@ -772,9 +775,12 @@ export const Settings: React.FC = () => {
               <div>
                 <label className="text-xs text-muted-foreground block mb-1">Monthly Salary (₹)</label>
                 <input
-                  type="number"
+                  type="text"
+                  inputMode="numeric"
+                  autoComplete="off"
                   value={profileSalary}
-                  onChange={(e) => setProfileSalary(Number(e.target.value))}
+                  onFocus={(e) => e.target.select()}
+                  onChange={(e) => { const v = e.target.value; if (/^[0-9]*$/.test(v)) setProfileSalary(v === "" ? "" : Number(v)); }}
                   className="w-full bg-background border border-border rounded-xl py-2 px-3 text-foreground text-sm focus:outline-none focus:border-gold-500"
                 />
               </div>
@@ -782,9 +788,12 @@ export const Settings: React.FC = () => {
               <div>
                 <label className="text-xs text-muted-foreground block mb-1">Family Debt Liability (₹)</label>
                 <input
-                  type="number"
+                  type="text"
+                  inputMode="numeric"
+                  autoComplete="off"
                   value={familyDebt}
-                  onChange={(e) => setFamilyDebt(Number(e.target.value))}
+                  onFocus={(e) => e.target.select()}
+                  onChange={(e) => { const v = e.target.value; if (/^[0-9]*$/.test(v)) setFamilyDebt(v === "" ? "" : Number(v)); }}
                   className="w-full bg-background border border-border rounded-xl py-2 px-3 text-foreground text-sm focus:outline-none focus:border-gold-500"
                 />
               </div>
@@ -793,9 +802,12 @@ export const Settings: React.FC = () => {
             <div>
               <label className="text-xs text-muted-foreground block mb-1">Freedom Target corpus (₹)</label>
               <input
-                type="number"
+                type="text"
+                inputMode="numeric"
+                autoComplete="off"
                 value={profileTarget}
-                onChange={(e) => setProfileTarget(Number(e.target.value))}
+                onFocus={(e) => e.target.select()}
+                onChange={(e) => { const v = e.target.value; if (/^[0-9]*$/.test(v)) setProfileTarget(v === "" ? "" : Number(v)); }}
                 className="w-full bg-background border border-border rounded-xl py-2 px-3 text-foreground text-sm focus:outline-none focus:border-gold-500"
               />
             </div>

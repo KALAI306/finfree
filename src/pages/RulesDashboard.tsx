@@ -327,9 +327,12 @@ export const RulesDashboard: React.FC = () => {
                   <div className="flex items-center gap-2">
                     <span className="text-sm text-muted-foreground">{rule.thresholdSuffix !== "%" ? rule.thresholdSuffix : ""}</span>
                     <input
-                      type="number"
+                      type="text"
+                      inputMode="decimal"
+                      autoComplete="off"
                       value={thresholdDraft}
-                      onChange={e => setThresholdDraft(e.target.value)}
+                      onFocus={e => e.target.select()}
+                      onChange={e => { if (/^[0-9]*\.?[0-9]*$/.test(e.target.value)) setThresholdDraft(e.target.value); }}
                       className="flex-1 bg-background border border-border rounded-xl px-3 py-2 text-foreground text-sm focus:outline-none focus:border-primary/50"
                       placeholder="Enter value"
                       autoFocus
@@ -468,10 +471,17 @@ export const RulesDashboard: React.FC = () => {
               <div>
                 <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider block mb-1">Monthly Limit (₹)</label>
                 <input
-                  type="number"
+                  type="text"
+                  inputMode="decimal"
+                  autoComplete="off"
                   placeholder="e.g. 5000"
                   value={customDraft.limitAmount || ""}
-                  onChange={e => setCustomDraft(d => ({ ...d, limitAmount: Number(e.target.value) }))}
+                  onFocus={e => e.target.select()}
+                  onChange={e => {
+                    const raw = e.target.value;
+                    if (!/^[0-9]*\.?[0-9]*$/.test(raw)) return;
+                    setCustomDraft(d => ({ ...d, limitAmount: raw === "" ? 0 : Number(raw) }));
+                  }}
                   className="w-full bg-background border border-border rounded-xl px-3 py-2.5 text-foreground text-sm focus:outline-none focus:border-primary/50"
                 />
               </div>

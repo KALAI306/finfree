@@ -23,6 +23,8 @@ import {
   Cloud,
   HardDrive,
   RefreshCw,
+  PiggyBank,
+  CheckCircle2,
 } from "lucide-react";
 import { Modal } from "../components/Modal";
 import { TransactionForm } from "./Transactions.tsx";
@@ -577,10 +579,50 @@ export const Dashboard: React.FC = () => {
         </div>
       </div>
 
+      {/* ── Budget Health summary ── */}
+      {Object.keys(budgetLimits).length > 0 && (() => {
+        const health = Object.entries(budgetLimits).map(([cat, limit]) => {
+          const spent = monthTxs
+            .filter(t => t.type === 'expense' && t.category === cat && !t.transfer_to_account_id)
+            .reduce((s, t) => s + Number(t.amount), 0);
+          const pct = Number(limit) > 0 ? (spent / Number(limit)) * 100 : 0;
+          return pct > 100 ? 'over' : pct >= 80 ? 'warning' : 'ok';
+        });
+        const overCount = health.filter(s => s === 'over').length;
+        const warnCount = health.filter(s => s === 'warning').length;
+        const okCount = health.filter(s => s === 'ok').length;
+        return (
+          <Link
+            to="/budgets"
+            className="aurora-card p-5 flex items-center gap-4 animate-fade-in-up hover:border-primary/30 transition-colors"
+          >
+            <div className={`icon-box w-10 h-10 ${overCount > 0 ? 'icon-box-danger' : warnCount > 0 ? 'icon-box-warning' : 'icon-box-primary'}`}>
+              <PiggyBank className="w-5 h-5" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-bold text-foreground">Budget Health</p>
+              <p className="text-xs text-muted-foreground">
+                {overCount > 0 && <span className="text-rose-400 font-semibold">{overCount} over budget</span>}
+                {overCount > 0 && (warnCount > 0 || okCount > 0) && ' · '}
+                {warnCount > 0 && <span className="text-amber-400 font-semibold">{warnCount} near limit</span>}
+                {warnCount > 0 && okCount > 0 && ' · '}
+                {okCount > 0 && <span className="text-emerald-400 font-semibold">{okCount} on track</span>}
+                {overCount === 0 && warnCount === 0 && okCount === 0 && 'No categories tracked yet'}
+              </p>
+            </div>
+            {overCount === 0 && warnCount === 0 ? (
+              <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
+            ) : (
+              <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />
+            )}
+          </Link>
+        );
+      })()}
+
       {/* ── Budget Alerts ── */}
       {Object.keys(budgetLimits).length > 0 && (() => {
         const alerts = Object.entries(budgetLimits).map(([cat, limit]) => {
-          const spent = monthTxs.filter(t => t.type === 'expense' && t.category === cat).reduce((s, t) => s + Number(t.amount), 0);
+          const spent = monthTxs.filter(t => t.type === 'expense' && t.category === cat && !t.transfer_to_account_id).reduce((s, t) => s + Number(t.amount), 0);
           const pct = limit > 0 ? (spent / limit) * 100 : 0;
           return { cat, limit, spent, pct };
         }).filter(a => a.pct > 0);

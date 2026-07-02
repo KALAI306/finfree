@@ -55,6 +55,34 @@ export const EmiManager: React.FC = () => {
   // Prepayment Calculator state (#6)
   const [extraPayment, setExtraPayment] = useState(1000);
 
+  // Text-buffer state for the calculator number fields above (mirrors the numbers
+  // but tolerates an empty string mid-edit — a bare `type="number"` bound directly
+  // to a number snaps back to "0" on every keystroke and makes backspace unusable
+  // on mobile). Slider drags update the number state directly, which syncs here.
+  const [assetPriceStr, setAssetPriceStr]   = useState(String(assetPrice));
+  const [downpaymentStr, setDownpaymentStr] = useState(String(downpayment));
+  const [interestRateStr, setInterestRateStr] = useState(String(interestRate));
+  const [tenureMonthsStr, setTenureMonthsStr] = useState(String(tenureMonths));
+  const [extraPaymentStr, setExtraPaymentStr] = useState(String(extraPayment));
+
+  useEffect(() => { setAssetPriceStr(String(assetPrice)); }, [assetPrice]);
+  useEffect(() => { setDownpaymentStr(String(downpayment)); }, [downpayment]);
+  useEffect(() => { setInterestRateStr(String(interestRate)); }, [interestRate]);
+  useEffect(() => { setTenureMonthsStr(String(tenureMonths)); }, [tenureMonths]);
+  useEffect(() => { setExtraPaymentStr(String(extraPayment)); }, [extraPayment]);
+
+  const handleBufferedNumber = (
+    raw: string,
+    setStr: (v: string) => void,
+    setNum: (v: number) => void,
+    decimals: boolean
+  ) => {
+    const re = decimals ? /^[0-9]*\.?[0-9]*$/ : /^[0-9]*$/;
+    if (!re.test(raw)) return;
+    setStr(raw);
+    if (raw !== "" && raw !== ".") setNum(Number(raw));
+  };
+
   // Auto limit downpayment to asset price
   useEffect(() => {
     if (downpayment > assetPrice) {
@@ -717,12 +745,14 @@ export const EmiManager: React.FC = () => {
                 <div className="flex items-center gap-1 bg-background border border-border rounded-lg px-2 py-0.5 text-foreground font-bold text-xs">
                   <span className="text-muted-foreground text-[10px]">₹</span>
                   <input
-                    type="number"
-                    min={20000}
-                    max={15000000}
-                    value={assetPrice}
-                    onChange={(e) => setAssetPrice(Number(e.target.value))}
-                    className="w-20 bg-transparent text-foreground text-right focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                    type="text"
+                    inputMode="numeric"
+                    autoComplete="off"
+                    value={assetPriceStr}
+                    onFocus={(e) => e.target.select()}
+                    onChange={(e) => handleBufferedNumber(e.target.value, setAssetPriceStr, setAssetPrice, false)}
+                    onBlur={() => { if (assetPriceStr === "") setAssetPrice(20000); }}
+                    className="w-20 bg-transparent text-foreground text-right focus:outline-none"
                   />
                 </div>
               </div>
@@ -748,12 +778,14 @@ export const EmiManager: React.FC = () => {
                 <div className="flex items-center gap-1 bg-background border border-border rounded-lg px-2 py-0.5 text-foreground font-bold text-xs">
                   <span className="text-muted-foreground text-[10px]">₹</span>
                   <input
-                    type="number"
-                    min={0}
-                    max={assetPrice}
-                    value={downpayment}
-                    onChange={(e) => setDownpayment(Number(e.target.value))}
-                    className="w-20 bg-transparent text-foreground text-right focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                    type="text"
+                    inputMode="numeric"
+                    autoComplete="off"
+                    value={downpaymentStr}
+                    onFocus={(e) => e.target.select()}
+                    onChange={(e) => handleBufferedNumber(e.target.value, setDownpaymentStr, setDownpayment, false)}
+                    onBlur={() => { if (downpaymentStr === "") setDownpayment(0); }}
+                    className="w-20 bg-transparent text-foreground text-right focus:outline-none"
                   />
                 </div>
               </div>
@@ -778,13 +810,14 @@ export const EmiManager: React.FC = () => {
                 <span className="text-muted-foreground font-semibold uppercase">Interest Rate</span>
                 <div className="flex items-center gap-1 bg-background border border-border rounded-lg px-2 py-0.5 text-foreground font-bold text-xs">
                   <input
-                    type="number"
-                    step="0.1"
-                    min={0}
-                    max={100}
-                    value={interestRate}
-                    onChange={(e) => setInterestRate(Number(e.target.value))}
-                    className="w-12 bg-transparent text-foreground text-right focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                    type="text"
+                    inputMode="decimal"
+                    autoComplete="off"
+                    value={interestRateStr}
+                    onFocus={(e) => e.target.select()}
+                    onChange={(e) => handleBufferedNumber(e.target.value, setInterestRateStr, setInterestRate, true)}
+                    onBlur={() => { if (interestRateStr === "" || interestRateStr === ".") setInterestRate(0); }}
+                    className="w-12 bg-transparent text-foreground text-right focus:outline-none"
                   />
                   <span className="text-muted-foreground text-[10px]">%</span>
                 </div>
@@ -810,12 +843,14 @@ export const EmiManager: React.FC = () => {
                 <span className="text-muted-foreground font-semibold uppercase">Loan Tenure</span>
                 <div className="flex items-center gap-1 bg-background border border-border rounded-lg px-2 py-0.5 text-foreground font-bold text-xs">
                   <input
-                    type="number"
-                    min={1}
-                    max={360}
-                    value={tenureMonths}
-                    onChange={(e) => setTenureMonths(Number(e.target.value))}
-                    className="w-10 bg-transparent text-foreground text-right focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                    type="text"
+                    inputMode="numeric"
+                    autoComplete="off"
+                    value={tenureMonthsStr}
+                    onFocus={(e) => e.target.select()}
+                    onChange={(e) => handleBufferedNumber(e.target.value, setTenureMonthsStr, setTenureMonths, false)}
+                    onBlur={() => { if (tenureMonthsStr === "" || Number(tenureMonthsStr) < 1) setTenureMonths(1); }}
+                    className="w-10 bg-transparent text-foreground text-right focus:outline-none"
                   />
                   <span className="text-muted-foreground text-[10px]">Months</span>
                 </div>
@@ -941,12 +976,14 @@ export const EmiManager: React.FC = () => {
               <div className="flex items-center gap-1 bg-background border border-border rounded-lg px-2 py-0.5 text-foreground font-bold text-xs">
                 <span className="text-muted-foreground text-[10px]">₹</span>
                 <input
-                  type="number"
-                  min={0}
-                  max={100000}
-                  value={extraPayment}
-                  onChange={(e) => setExtraPayment(Number(e.target.value))}
-                  className="w-20 bg-transparent text-foreground text-right focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                  type="text"
+                  inputMode="numeric"
+                  autoComplete="off"
+                  value={extraPaymentStr}
+                  onFocus={(e) => e.target.select()}
+                  onChange={(e) => handleBufferedNumber(e.target.value, setExtraPaymentStr, setExtraPayment, false)}
+                  onBlur={() => { if (extraPaymentStr === "") setExtraPayment(0); }}
+                  className="w-20 bg-transparent text-foreground text-right focus:outline-none"
                 />
               </div>
             </div>

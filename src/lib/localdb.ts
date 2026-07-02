@@ -57,6 +57,15 @@ export interface LocalInvestment {
   created_at: string;
 }
 
+export interface LocalBudget {
+  id: string;
+  user_id: string;
+  category: string;
+  monthly_limit: number;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface LocalPreference {
   id: string;        // `${user_id}_${key}`
   user_id: string;
@@ -111,6 +120,7 @@ export class FinFreeDB extends Dexie {
   goals!: Table<LocalGoal>;
   networth_snapshots!: Table<NetWorthSnapshot>;
   preferences!: Table<LocalPreference>;
+  budgets!: Table<LocalBudget>;
 
   constructor() {
     super('FinFreeLocalDB');
@@ -140,6 +150,17 @@ export class FinFreeDB extends Dexie {
       goals: 'id, user_id',
       networth_snapshots: 'id, user_id, month',
       preferences: 'id, user_id, key',
+    });
+    this.version(4).stores({
+      profiles: 'id',
+      accounts: 'id, user_id',
+      transactions: 'id, user_id, account_id, date, type, category',
+      investments: 'id, user_id',
+      emis: 'id, user_id',
+      goals: 'id, user_id',
+      networth_snapshots: 'id, user_id, month',
+      preferences: 'id, user_id, key',
+      budgets: 'id, user_id, category',
     });
   }
 }

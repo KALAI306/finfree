@@ -10,6 +10,7 @@ import { Markets } from "./pages/Markets";
 import { EmiManager } from "./pages/EmiManager";
 import { FreedomCalculator } from "./pages/FreedomCalculator";
 import { Goals } from "./pages/Goals";
+import { Budgets } from "./pages/Budgets";
 import { RulesDashboard } from "./pages/RulesDashboard";
 import { Reports } from "./pages/Reports";
 import { Settings } from "./pages/Settings";
@@ -76,6 +77,7 @@ const AppContent: React.FC = () => {
               <Route path="/emi" element={<EmiManager />} />
               <Route path="/freedom" element={<FreedomCalculator />} />
               <Route path="/goals" element={<Goals />} />
+              <Route path="/budgets" element={<Budgets />} />
               <Route path="/rules" element={<RulesDashboard />} />
               <Route path="/reports" element={<Reports />} />
               <Route path="/settings" element={<Settings />} />

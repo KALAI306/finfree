@@ -8,6 +8,7 @@ import {
   addAccount, updateAccount, deleteAccount,
   addInvestment, updateInvestment, deleteInvestment,
   addEmi, updateEmi, deleteEmi,
+  updateProfile as dbUpdateProfile,
 } from '../../lib/db';
 
 const QUICK_PROMPTS = [
@@ -26,7 +27,7 @@ interface Message {
 }
 
 export const FloatingAiAssistant: React.FC = () => {
-  const { user, profile, accounts, transactions, investments, emis, goals, refreshData } = useApp();
+  const { user, profile, accounts, transactions, investments, emis, goals, budgetLimits, setBudgetLimit, removeBudgetLimit, refreshData } = useApp();
 
   const [isOpen,     setIsOpen]     = useState(false);
   const [input,      setInput]      = useState('');
@@ -157,8 +158,36 @@ export const FloatingAiAssistant: React.FC = () => {
       return `EMI deleted successfully.`;
     }
 
+    // ── Budgets ──
+    if (name === 'set_budget') {
+      setBudgetLimit(args.category, Number(args.monthly_limit));
+      return `Budget set: ${args.category} → ${fmt(args.monthly_limit)}/month`;
+    }
+    if (name === 'delete_budget') {
+      const match = Object.keys(budgetLimits).find(c => c.toLowerCase().includes(String(args.category).toLowerCase()));
+      if (!match) return `No budget found matching "${args.category}".`;
+      removeBudgetLimit(match);
+      return `Removed budget for "${match}".`;
+    }
+
+    // ── Profile ──
+    if (name === 'update_profile') {
+      if (!profile) return 'Error: profile not loaded';
+      const updates = {
+        id: profile.id,
+        ...(args.monthly_salary !== undefined && { monthly_salary: Number(args.monthly_salary) }),
+        ...(args.freedom_target !== undefined && { freedom_target: Number(args.freedom_target) }),
+        ...(args.name && { name: args.name }),
+        ...(args.age !== undefined && { age: Number(args.age) }),
+      };
+      await dbUpdateProfile(updates);
+      await refreshData();
+      const parts = Object.entries(updates).filter(([k]) => k !== 'id').map(([k, v]) => `${k}: ${typeof v === 'number' && (k.includes('salary') || k.includes('target')) ? fmt(v) : v}`);
+      return `Profile updated — ${parts.join(', ')}`;
+    }
+
     return `Unknown tool: ${name}`;
-  }, [user, accounts, goals, refreshData]);
+  }, [user, accounts, goals, profile, budgetLimits, setBudgetLimit, removeBudgetLimit, refreshData]);
 
   const sendMessage = useCallback(async (text: string) => {
     const trimmed = text.trim();
@@ -175,7 +204,7 @@ export const FloatingAiAssistant: React.FC = () => {
 
     try {
       // Build compact context string from current financial data
-      const contextStr = buildContextStr(profile, accounts, transactions, investments, emis, goals);
+      const contextStr = buildContextStr(profile, accounts, transactions, investments, emis, goals, budgetLimits);
       const reply = await chatWithAI(trimmed, userId, contextStr, handleToolCall);
       setMessages(prev => [...prev.slice(0, -1), { role: 'assistant', text: reply }]);
     } catch (e: any) {
@@ -190,7 +219,7 @@ export const FloatingAiAssistant: React.FC = () => {
     } finally {
       setIsThinking(false);
     }
-  }, [isThinking, profile, accounts, transactions, investments, emis, goals, userId, handleToolCall]);
+  }, [isThinking, profile, accounts, transactions, investments, emis, goals, budgetLimits, userId, handleToolCall]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(input); }

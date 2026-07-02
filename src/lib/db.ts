@@ -1,5 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import { localDb } from './localdb';
+import type { LocalBudget } from './localdb';
 import { getStorageMode } from './storageMode';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -68,6 +69,15 @@ export interface EMI {
   start_date: string;
   paid_months: number;
   created_at: string;
+}
+
+export interface Budget {
+  id: string;
+  user_id: string;
+  category: string;
+  monthly_limit: number;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface Goal {
@@ -508,6 +518,54 @@ export async function generateMcpToken(userId: string): Promise<string> {
 
 export async function revokeMcpToken(userId: string): Promise<void> {
   await supabase!.from('mcp_tokens').delete().eq('user_id', userId);
+}
+
+// ── Budgets (monthly category spending limits) ─────────────────────────────────
+
+export async function getBudgets(userId: string): Promise<Budget[]> {
+  if (isLocal()) {
+    return await localDb.budgets.where('user_id').equals(userId).toArray();
+  }
+  const { data, error } = await supabase!.from('budgets').select('*').eq('user_id', userId).order('category');
+  if (error) throw error;
+  return data || [];
+}
+
+export async function setBudget(userId: string, category: string, monthlyLimit: number): Promise<Budget> {
+  const now = new Date().toISOString();
+  if (isLocal()) {
+    const existing = await localDb.budgets.where({ user_id: userId, category }).first();
+    const record: LocalBudget = {
+      id: existing?.id || uuidv4(),
+      user_id: userId,
+      category,
+      monthly_limit: monthlyLimit,
+      created_at: existing?.created_at || now,
+      updated_at: now,
+    };
+    await localDb.budgets.put(record);
+    return record as Budget;
+  }
+  const { data, error } = await supabase!
+    .from('budgets')
+    .upsert(
+      { user_id: userId, category, monthly_limit: monthlyLimit, updated_at: now },
+      { onConflict: 'user_id,category' }
+    )
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+export async function deleteBudget(userId: string, category: string): Promise<void> {
+  if (isLocal()) {
+    const existing = await localDb.budgets.where({ user_id: userId, category }).first();
+    if (existing) await localDb.budgets.delete(existing.id);
+    return;
+  }
+  const { error } = await supabase!.from('budgets').delete().eq('user_id', userId).eq('category', category);
+  if (error) throw error;
 }
 
 // ── User preferences (budget limits, starred accounts, watchlist) ─────────────

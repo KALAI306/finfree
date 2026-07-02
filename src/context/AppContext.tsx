@@ -12,6 +12,9 @@ import {
   addTransaction,
   getPreference,
   setPreference,
+  getBudgets,
+  setBudget as dbSetBudget,
+  deleteBudget as dbDeleteBudget,
 } from "../lib/db";
 import type {
   Profile,
@@ -146,24 +149,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     try { setCustomAccountTypes(JSON.parse(localStorage.getItem(`finfree_custom_accounts_${uid}`) || "[]")); } catch { setCustomAccountTypes([]); }
     try { setCustomAssetTypes(JSON.parse(localStorage.getItem(`finfree_custom_assets_${uid}`) || "[]")); } catch { setCustomAssetTypes([]); }
 
-    // Sync budgets + starred accounts from the preference store (cloud/local DB).
+    // Sync starred accounts from the preference store (cloud/local DB).
     // localStorage above is just a fast cache — the store is the source of truth.
     // If the store is empty but localStorage has values, migrate them up once.
     (async () => {
       try {
-        const [storedBudgets, storedStarred] = await Promise.all([
-          getPreference<Record<string, number>>(uid, 'budget_limits'),
-          getPreference<string[]>(uid, 'starred_accounts'),
-        ]);
-
-        if (storedBudgets && Object.keys(storedBudgets).length > 0) {
-          setBudgetLimitsState(storedBudgets);
-          localStorage.setItem('finfree_budget_limits', JSON.stringify(storedBudgets));
-        } else {
-          const cached = JSON.parse(localStorage.getItem('finfree_budget_limits') || '{}');
-          if (Object.keys(cached).length > 0) await setPreference(uid, 'budget_limits', cached);
-        }
-
+        const storedStarred = await getPreference<string[]>(uid, 'starred_accounts');
         if (storedStarred && storedStarred.length > 0) {
           setStarredAccountIds(storedStarred);
           localStorage.setItem(`finfree_starred_accounts_${uid}`, JSON.stringify(storedStarred));
@@ -173,6 +164,36 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         }
       } catch (e) {
         console.warn('Preference sync failed (using local cache):', e);
+      }
+    })();
+
+    // Load budgets from the relational budgets table (cloud Supabase / local IndexedDB).
+    // One-time migration: if the table is empty but the old JSON preference/localStorage
+    // had limits, write them into the new table so nobody loses existing budgets.
+    (async () => {
+      try {
+        const rows = await getBudgets(uid);
+        if (rows.length > 0) {
+          const asRecord = Object.fromEntries(rows.map(r => [r.category, Number(r.monthly_limit)]));
+          setBudgetLimitsState(asRecord);
+          localStorage.setItem('finfree_budget_limits', JSON.stringify(asRecord));
+        } else {
+          let legacy: Record<string, number> = {};
+          try {
+            const fromPref = await getPreference<Record<string, number>>(uid, 'budget_limits');
+            legacy = fromPref || JSON.parse(localStorage.getItem('finfree_budget_limits') || '{}');
+          } catch {
+            legacy = JSON.parse(localStorage.getItem('finfree_budget_limits') || '{}');
+          }
+          const entries = Object.entries(legacy).filter(([, v]) => Number(v) > 0);
+          if (entries.length > 0) {
+            await Promise.all(entries.map(([cat, limit]) => dbSetBudget(uid, cat, Number(limit))));
+            setBudgetLimitsState(legacy);
+            localStorage.setItem('finfree_budget_limits', JSON.stringify(legacy));
+          }
+        }
+      } catch (e) {
+        console.warn('Budget sync failed (using local cache):', e);
       }
     })();
   }, [user?.id]);
@@ -329,7 +350,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const updated = { ...budgetLimits, [category]: amount };
     setBudgetLimitsState(updated);
     localStorage.setItem('finfree_budget_limits', JSON.stringify(updated));
-    if (user?.id) setPreference(user.id, 'budget_limits', updated).catch(() => {});
+    if (user?.id) dbSetBudget(user.id, category, amount).catch(() => showToast('Failed to save budget — will retry next load', 'error'));
   };
 
   const removeBudgetLimit = (category: string) => {
@@ -337,7 +358,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     delete updated[category];
     setBudgetLimitsState(updated);
     localStorage.setItem('finfree_budget_limits', JSON.stringify(updated));
-    if (user?.id) setPreference(user.id, 'budget_limits', updated).catch(() => {});
+    if (user?.id) dbDeleteBudget(user.id, category).catch(() => {});
   };
 
   const showToast = (message: string, type: ToastType) => {
