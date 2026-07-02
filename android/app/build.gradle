@@ -1,5 +1,10 @@
 apply plugin: 'com.android.application'
 
+// Use a local variable so Groovy doesn't misparse "versionCode (expr)" as a
+// null-method call (the space before "(" makes it ambiguous in Groovy DSL).
+def runNum = System.getenv("GITHUB_RUN_NUMBER")
+def keystoreFile = file('finfree.keystore')
+
 android {
     namespace = "com.finfree.app"
     compileSdk = rootProject.ext.compileSdkVersion
@@ -7,42 +12,40 @@ android {
         applicationId "com.finfree.app"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        // CI builds use the GitHub Actions run number so every new APK is a higher
-        // version than the last; local builds fall back to 1.
-        versionCode (System.getenv("GITHUB_RUN_NUMBER") ?: "1").toInteger()
-        versionName "1.0." + (System.getenv("GITHUB_RUN_NUMBER") ?: "0")
+        versionCode runNum ? runNum.toInteger() : 1
+        versionName "1.0." + (runNum ?: "0")
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
-             // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
-             // Default: https://android.googlesource.com/platform/frameworks/base/+/282e181b58cf72b6ca770dc7ca5f91f135444502/tools/aapt/AaptAssets.cpp#61
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
-    // Fixed signing key committed to the repo so every build (local or CI) has the
-    // SAME signature — otherwise each GitHub Actions runner generates a fresh debug
-    // keystore and Android rejects updates with "package conflicts with an existing
-    // package", forcing users to uninstall first.
-    signingConfigs {
-        finfree {
-            storeFile file('finfree.keystore')
-            storePassword 'finfree2026'
-            keyAlias 'finfree'
-            keyPassword 'finfree2026'
-        }
-    }
     buildTypes {
-        // Only use the fixed key when the keystore file is present (local machine,
-        // or CI after restoring it from the KEYSTORE_BASE64 secret). Falls back to
-        // the default debug key otherwise so builds never hard-fail.
-        debug {
-            if (file('finfree.keystore').exists()) {
-                signingConfig signingConfigs.finfree
-            }
-        }
+        debug {}
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
-            if (file('finfree.keystore').exists()) {
+        }
+    }
+}
+
+// Only define and apply the fixed signing config when the keystore is present.
+// Defining signingConfigs with a missing storeFile causes AGP to throw "Value is null"
+// even when the config is guarded by an if inside buildTypes.
+if (keystoreFile.exists()) {
+    android {
+        signingConfigs {
+            finfree {
+                storeFile keystoreFile
+                storePassword 'finfree2026'
+                keyAlias 'finfree'
+                keyPassword 'finfree2026'
+            }
+        }
+        buildTypes {
+            debug {
+                signingConfig signingConfigs.finfree
+            }
+            release {
                 signingConfig signingConfigs.finfree
             }
         }
