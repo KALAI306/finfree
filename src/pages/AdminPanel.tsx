@@ -49,11 +49,17 @@ export const AdminPanel: React.FC = () => {
   const [appUrl, setAppUrl]       = useState('');
   const [savingUrl, setSavingUrl] = useState(false);
   const [urlSaved, setUrlSaved]   = useState(false);
+  const [finnhubKey, setFinnhubKey]     = useState('');
+  const [savingKey, setSavingKey]       = useState(false);
+  const [keySaved, setKeySaved]         = useState(false);
 
   useEffect(() => {
     if (!isAdmin) return;
     loadProfiles();
-    fetchAISettings().then(s => setAppUrl(s.app_download_url || '')).catch(() => {});
+    fetchAISettings().then(s => {
+      setAppUrl(s.app_download_url || '');
+      setFinnhubKey(s.ai_key_finnhub || '');  // arrives masked from the worker
+    }).catch(() => {});
   }, [isAdmin]);
 
   const handleSaveAppUrl = async () => {
@@ -67,6 +73,21 @@ export const AdminPanel: React.FC = () => {
       showToast('Failed to save app link', 'error');
     } finally {
       setSavingUrl(false);
+    }
+  };
+
+  const handleSaveFinnhubKey = async () => {
+    if (finnhubKey.includes('•')) { showToast('Paste a new key to replace the saved one', 'info'); return; }
+    setSavingKey(true);
+    try {
+      await updateAISetting('ai_key_finnhub', finnhubKey.trim());
+      setKeySaved(true);
+      showToast('Finnhub API key saved', 'success');
+      setTimeout(() => setKeySaved(false), 2500);
+    } catch {
+      showToast('Failed to save Finnhub key', 'error');
+    } finally {
+      setSavingKey(false);
     }
   };
 
@@ -212,6 +233,37 @@ export const AdminPanel: React.FC = () => {
               : <><Save className="w-3.5 h-3.5" /> Save</>
             }
           </button>
+        </div>
+
+        {/* Finnhub key for the Markets page (US stock quotes; NSE/BSE/MF work without it) */}
+        <div className="pt-3 border-t border-border space-y-2">
+          <div>
+            <h3 className="text-sm font-bold text-foreground">Finnhub API Key</h3>
+            <p className="text-[11px] text-muted-foreground">
+              Used for US stock quotes on the Markets page. Indian stocks, indices &amp; mutual funds work without it. Get a free key at finnhub.io
+            </p>
+          </div>
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={finnhubKey}
+              onChange={e => setFinnhubKey(e.target.value)}
+              placeholder="paste your finnhub.io API key"
+              className="flex-1 bg-background border border-border rounded-xl py-2.5 px-3 text-sm text-foreground focus:outline-none focus:border-primary/60 min-w-0 font-mono"
+            />
+            <button
+              onClick={handleSaveFinnhubKey}
+              disabled={savingKey}
+              className="shrink-0 flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-primary text-primary-foreground text-xs font-bold hover:opacity-90 transition-all disabled:opacity-50"
+            >
+              {keySaved
+                ? <><CheckCircle className="w-3.5 h-3.5" /> Saved</>
+                : savingKey
+                ? <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                : <><Save className="w-3.5 h-3.5" /> Save</>
+              }
+            </button>
+          </div>
         </div>
       </div>
 

@@ -47,11 +47,22 @@ export interface LocalInvestment {
   invested_amount: number;
   current_value: number;
   units?: number;
-  buy_price?: number;
+  buy_price?: number | null;
   current_price?: number;
   notes?: string;
   purchase_date?: string;
+  tracking_mode?: string;        // 'manual' | 'linked'
+  symbol?: string | null;        // e.g. RELIANCE.NS, AAPL, MF:120503
+  quantity?: number | null;
   created_at: string;
+}
+
+export interface LocalPreference {
+  id: string;        // `${user_id}_${key}`
+  user_id: string;
+  key: string;       // 'budget_limits' | 'starred_accounts' | 'watchlist'
+  value: unknown;
+  updated_at: string;
 }
 
 export interface LocalEmi {
@@ -99,6 +110,7 @@ export class FinFreeDB extends Dexie {
   emis!: Table<LocalEmi>;
   goals!: Table<LocalGoal>;
   networth_snapshots!: Table<NetWorthSnapshot>;
+  preferences!: Table<LocalPreference>;
 
   constructor() {
     super('FinFreeLocalDB');
@@ -118,6 +130,16 @@ export class FinFreeDB extends Dexie {
       emis: 'id, user_id',
       goals: 'id, user_id',
       networth_snapshots: 'id, user_id, month',
+    });
+    this.version(3).stores({
+      profiles: 'id',
+      accounts: 'id, user_id',
+      transactions: 'id, user_id, account_id, date, type, category',
+      investments: 'id, user_id',
+      emis: 'id, user_id',
+      goals: 'id, user_id',
+      networth_snapshots: 'id, user_id, month',
+      preferences: 'id, user_id, key',
     });
   }
 }

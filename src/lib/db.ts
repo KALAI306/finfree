@@ -51,6 +51,9 @@ export interface Investment {
   current_value: number;
   return_percent: number;
   purchase_date?: string;
+  tracking_mode?: string;      // 'manual' (default) | 'linked'
+  symbol?: string | null;      // e.g. RELIANCE.NS, AAPL, MF:120503
+  buy_price?: number | null;   // per-unit buy price when linked
   created_at: string;
 }
 
@@ -505,6 +508,42 @@ export async function generateMcpToken(userId: string): Promise<string> {
 
 export async function revokeMcpToken(userId: string): Promise<void> {
   await supabase!.from('mcp_tokens').delete().eq('user_id', userId);
+}
+
+// ── User preferences (budget limits, starred accounts, watchlist) ─────────────
+// Synced to Supabase in cloud mode, IndexedDB in local mode. localStorage is
+// only a fast cache written alongside so the UI paints instantly on next load.
+
+export async function getPreference<T>(userId: string, key: string): Promise<T | null> {
+  if (isLocal()) {
+    const row = await localDb.preferences.get(`${userId}_${key}`);
+    return row ? (row.value as T) : null;
+  }
+  const { data, error } = await supabase!
+    .from('user_preferences')
+    .select('value')
+    .eq('user_id', userId)
+    .eq('key', key)
+    .maybeSingle();
+  if (error) throw error;
+  return data ? (data.value as T) : null;
+}
+
+export async function setPreference(userId: string, key: string, value: unknown): Promise<void> {
+  if (isLocal()) {
+    await localDb.preferences.put({
+      id: `${userId}_${key}`,
+      user_id: userId,
+      key,
+      value,
+      updated_at: new Date().toISOString(),
+    });
+    return;
+  }
+  const { error } = await supabase!
+    .from('user_preferences')
+    .upsert({ user_id: userId, key, value, updated_at: new Date().toISOString() }, { onConflict: 'user_id,key' });
+  if (error) throw error;
 }
 
 export async function resetUserDatabase(userId: string): Promise<void> {

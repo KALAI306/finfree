@@ -6,6 +6,7 @@ import { Auth } from "./pages/Auth";
 import { Dashboard } from "./pages/Dashboard";
 import { Transactions } from "./pages/Transactions";
 import { Investments } from "./pages/Investments";
+import { Markets } from "./pages/Markets";
 import { EmiManager } from "./pages/EmiManager";
 import { FreedomCalculator } from "./pages/FreedomCalculator";
 import { Goals } from "./pages/Goals";
@@ -71,6 +72,7 @@ const AppContent: React.FC = () => {
               <Route path="/accounts" element={<Accounts />} />
               <Route path="/transactions" element={<Transactions />} />
               <Route path="/investments" element={<Investments />} />
+              <Route path="/markets" element={<Markets />} />
               <Route path="/emi" element={<EmiManager />} />
               <Route path="/freedom" element={<FreedomCalculator />} />
               <Route path="/goals" element={<Goals />} />

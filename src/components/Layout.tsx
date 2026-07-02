@@ -22,6 +22,7 @@ import {
   Palette,
   Shield,
   Bot,
+  LineChart,
 } from "lucide-react";
 import { FloatingAiAssistant } from "./ui/glowing-ai-chat-assistant";
 import { WelcomeTour } from "./WelcomeTour";
@@ -39,6 +40,7 @@ const navItems = [
   { path: "/accounts",   label: "Accounts",    icon: Wallet     },
   { path: "/transactions", label: "Transactions", icon: ArrowUpDown },
   { path: "/investments", label: "Investments", icon: TrendingUp },
+  { path: "/markets",    label: "Markets",     icon: LineChart  },
   { path: "/emi",        label: "EMI",         icon: Calendar   },
   { path: "/freedom",    label: "Freedom",     icon: Flame      },
   { path: "/goals",      label: "Goals",       icon: Target     },

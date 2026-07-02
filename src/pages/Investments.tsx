@@ -1,7 +1,8 @@
-import React, { useState } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useApp } from "../context/AppContext";
 import { formatIndianNumberOnly } from "../lib/utils";
 import { addInvestment, deleteInvestment, updateInvestment } from "../lib/db";
+import { fetchQuotes, searchSymbols, type SymbolSearchResult } from "../lib/market";
 import {
   Plus,
   TrendingUp,
@@ -14,6 +15,8 @@ import {
   LineChart as LineIcon,
   CircleDot,
   RefreshCw,
+  Search,
+  Radio,
 } from "lucide-react";
 import {
   PieChart,
@@ -122,6 +125,42 @@ export const Investments: React.FC = () => {
   const [editingInvestment, setEditingInvestment] = useState<Investment | null>(null);
   const [tooltipActive, setTooltipActive] = useState(false);
 
+  // Auto-refresh linked holdings from live prices (once per page visit)
+  const liveRefreshDone = useRef(false);
+  useEffect(() => {
+    if (liveRefreshDone.current) return;
+    const linked = investments.filter((i) => i.tracking_mode === "linked" && i.symbol && Number(i.quantity) > 0);
+    if (linked.length === 0) return;
+    liveRefreshDone.current = true;
+    (async () => {
+      try {
+        const quotes = await fetchQuotes(linked.map((i) => i.symbol as string));
+        const bySymbol = Object.fromEntries(quotes.filter((q) => !q.error).map((q) => [q.symbol, q]));
+        let updated = 0;
+        for (const inv of linked) {
+          const q = bySymbol[inv.symbol as string];
+          if (!q) continue;
+          const newValue = +(Number(inv.quantity) * q.price).toFixed(2);
+          if (Math.abs(newValue - Number(inv.current_value)) < 0.01) continue;
+          const invested = Number(inv.invested_amount);
+          await updateInvestment({
+            id: inv.id,
+            current_value: newValue,
+            return_percent: invested > 0 ? +(((newValue - invested) / invested) * 100).toFixed(2) : 0,
+          });
+          updated++;
+        }
+        if (updated > 0) {
+          refreshData();
+          showToast(`${updated} holding${updated > 1 ? "s" : ""} updated with live prices`, "info");
+        }
+      } catch {
+        // Live refresh is best-effort — stale values are still shown
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [investments.length]);
+
   // Summary math
   const totalInvested = investments.reduce((sum, inv) => sum + Number(inv.invested_amount), 0);
   const totalCurrentValue = investments.reduce((sum, inv) => sum + Number(inv.current_value), 0);
@@ -216,6 +255,56 @@ export const Investments: React.FC = () => {
     const [currentStr, setCurrentStr] = useState(investment?.current_value?.toString() || "");
     const [quantityStr, setQuantityStr] = useState(investment?.quantity?.toString() || "");
 
+    // ── Linked (live-tracked) mode state ────────────────────────────────────
+    const [valueMode, setValueMode] = useState<"manual" | "linked">(
+      investment?.tracking_mode === "linked" ? "linked" : "manual"
+    );
+    const [symbol, setSymbol] = useState(investment?.symbol || "");
+    const [buyPriceStr, setBuyPriceStr] = useState(investment?.buy_price?.toString() || "");
+    const [livePrice, setLivePrice] = useState<number | null>(null);
+    const [liveCurrency, setLiveCurrency] = useState("INR");
+    const [symQuery, setSymQuery] = useState("");
+    const [symResults, setSymResults] = useState<SymbolSearchResult[]>([]);
+    const [symSearching, setSymSearching] = useState(false);
+    const symTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+    // Debounced symbol search
+    useEffect(() => {
+      if (symTimer.current) clearTimeout(symTimer.current);
+      if (symQuery.trim().length < 2) { setSymResults([]); return; }
+      symTimer.current = setTimeout(async () => {
+        setSymSearching(true);
+        try { setSymResults(await searchSymbols(symQuery)); } catch { setSymResults([]); }
+        finally { setSymSearching(false); }
+      }, 400);
+      return () => { if (symTimer.current) clearTimeout(symTimer.current); };
+    }, [symQuery]);
+
+    // Fetch live price whenever a symbol is chosen (or when editing an existing linked holding)
+    useEffect(() => {
+      if (!symbol) { setLivePrice(null); return; }
+      fetchQuotes([symbol])
+        .then((qs) => {
+          const q = qs[0];
+          if (q && !q.error) { setLivePrice(q.price); setLiveCurrency(q.currency || "INR"); }
+        })
+        .catch(() => {});
+    }, [symbol]);
+
+    // In linked mode, invested & current are derived: qty × buy price / qty × live price
+    const linkedQty      = Number(quantityStr) || 0;
+    const linkedBuy      = Number(buyPriceStr) || 0;
+    const linkedInvested = +(linkedQty * linkedBuy).toFixed(2);
+    const linkedCurrent  = livePrice !== null ? +(linkedQty * livePrice).toFixed(2) : 0;
+
+    useEffect(() => {
+      if (valueMode !== "linked") return;
+      setValue("quantity", quantityStr);
+      if (linkedInvested > 0) setValue("invested_amount", linkedInvested);
+      if (linkedCurrent > 0)  setValue("current_value", linkedCurrent);
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [valueMode, quantityStr, buyPriceStr, livePrice]);
+
     const {
       register,
       handleSubmit,
@@ -239,6 +328,12 @@ export const Investments: React.FC = () => {
 
     const onFormSubmit = async (data: any) => {
       if (!user) return;
+      if (valueMode === "linked") {
+        if (!symbol) { showToast("Search and select a stock/fund to link", "warning"); return; }
+        if (linkedQty <= 0) { showToast("Enter the quantity you hold", "warning"); return; }
+        if (linkedBuy <= 0) { showToast("Enter your average buy price", "warning"); return; }
+        if (livePrice === null) { showToast("Waiting for live price — try again in a second", "warning"); return; }
+      }
       try {
         let finalType = data.type;
         if (data.type === "__custom__") {
@@ -262,13 +357,18 @@ export const Investments: React.FC = () => {
             name: data.name,
             type: finalType,
             quantity:
-              finalType === "gold" || finalType === "silver" || data.quantity
+              valueMode === "linked"
+                ? linkedQty
+                : finalType === "gold" || finalType === "silver" || data.quantity
                 ? data.quantity || null
                 : null,
             invested_amount: Number(data.invested_amount),
             current_value: Number(data.current_value),
             return_percent,
             purchase_date: data.purchase_date || undefined,
+            tracking_mode: valueMode,
+            symbol: valueMode === "linked" ? symbol : null,
+            buy_price: valueMode === "linked" ? linkedBuy : null,
           });
           savedId = investment.id;
           showToast("Investment updated successfully", "success");
@@ -278,13 +378,18 @@ export const Investments: React.FC = () => {
             name: data.name,
             type: finalType,
             quantity:
-              finalType === "gold" || finalType === "silver" || data.quantity
+              valueMode === "linked"
+                ? linkedQty
+                : finalType === "gold" || finalType === "silver" || data.quantity
                 ? data.quantity || null
                 : null,
             invested_amount: Number(data.invested_amount),
             current_value: Number(data.current_value),
             return_percent,
             purchase_date: data.purchase_date || undefined,
+            tracking_mode: valueMode,
+            symbol: valueMode === "linked" ? symbol : null,
+            buy_price: valueMode === "linked" ? linkedBuy : null,
           });
           savedId = "";
           showToast("Investment logged successfully", "success");
@@ -452,38 +557,174 @@ export const Investments: React.FC = () => {
           </div>
         )}
 
-        {/* Invested + Current Value */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div>
-            <NumberInput
-              label="Invested Amount (₹)"
-              value={investedStr}
-              onChange={(v) => {
-                setInvestedStr(v);
-                setValue("invested_amount", v);
-              }}
-              decimals
-              prefix="₹"
-              placeholder="0.00"
-              error={getErrorMessage(errors.invested_amount)}
-            />
-          </div>
-
-          <div>
-            <NumberInput
-              label="Current Value (₹)"
-              value={currentStr}
-              onChange={(v) => {
-                setCurrentStr(v);
-                setValue("current_value", v);
-              }}
-              decimals
-              prefix="₹"
-              placeholder="0.00"
-              error={getErrorMessage(errors.current_value)}
-            />
+        {/* Value tracking mode: manual entry vs live-linked */}
+        <div className="flex items-center justify-between gap-3 p-3.5 bg-muted/40 border border-border rounded-xl">
+          <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+            Value Tracking
+          </span>
+          <div className="flex items-center gap-1 bg-background border border-border rounded-lg p-0.5">
+            <button
+              type="button"
+              onClick={() => setValueMode("manual")}
+              className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${
+                valueMode === "manual"
+                  ? "bg-gold-500 text-white shadow-sm"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              Manual
+            </button>
+            <button
+              type="button"
+              onClick={() => setValueMode("linked")}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${
+                valueMode === "linked"
+                  ? "bg-gold-500 text-white shadow-sm"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              <Radio className="w-3 h-3" />
+              Live Linked
+            </button>
           </div>
         </div>
+
+        {valueMode === "manual" ? (
+          /* Invested + Current Value — entered by hand */
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <NumberInput
+                label="Invested Amount (₹)"
+                value={investedStr}
+                onChange={(v) => {
+                  setInvestedStr(v);
+                  setValue("invested_amount", v);
+                }}
+                decimals
+                prefix="₹"
+                placeholder="0.00"
+                error={getErrorMessage(errors.invested_amount)}
+              />
+            </div>
+
+            <div>
+              <NumberInput
+                label="Current Value (₹)"
+                value={currentStr}
+                onChange={(v) => {
+                  setCurrentStr(v);
+                  setValue("current_value", v);
+                }}
+                decimals
+                prefix="₹"
+                placeholder="0.00"
+                error={getErrorMessage(errors.current_value)}
+              />
+            </div>
+          </div>
+        ) : (
+          /* Live linked — pick a symbol, value auto-updates from market price */
+          <div className="space-y-4">
+            {/* Symbol picker */}
+            <div className="relative">
+              <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider block mb-1">
+                Linked Stock / Mutual Fund
+              </label>
+              {symbol ? (
+                <div className="flex items-center gap-2 bg-background border border-primary/40 rounded-xl px-3.5 py-3">
+                  <Radio className="w-4 h-4 text-emerald-400 shrink-0" />
+                  <span className="text-sm font-semibold text-foreground flex-1 truncate">{symbol}</span>
+                  {livePrice !== null && (
+                    <span className="text-xs font-bold text-emerald-400">
+                      {liveCurrency === "INR" ? "₹" : "$"}{livePrice.toLocaleString("en-IN", { maximumFractionDigits: 2 })} live
+                    </span>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => { setSymbol(""); setLivePrice(null); }}
+                    className="text-xs text-muted-foreground hover:text-rose-400 cursor-pointer"
+                  >
+                    Change
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <div className="flex items-center gap-2 bg-background border border-border rounded-xl px-3.5">
+                    <Search className="w-4 h-4 text-muted-foreground shrink-0" />
+                    <input
+                      type="text"
+                      value={symQuery}
+                      onChange={(e) => setSymQuery(e.target.value)}
+                      placeholder="Search: Reliance, TCS, Nifty BeES, Parag Parikh…"
+                      className="flex-1 bg-transparent py-3 text-sm text-foreground focus:outline-none"
+                    />
+                    {symSearching && <RefreshCw className="w-4 h-4 text-muted-foreground animate-spin shrink-0" />}
+                  </div>
+                  {symResults.length > 0 && (
+                    <div className="absolute z-40 mt-1 w-full bg-card border border-border rounded-xl overflow-hidden max-h-56 overflow-y-auto shadow-xl">
+                      {symResults.map((r) => (
+                        <button
+                          key={r.symbol}
+                          type="button"
+                          onClick={() => { setSymbol(r.symbol); setSymQuery(""); setSymResults([]); setValue("name", r.name); }}
+                          className="w-full flex items-center gap-2 px-3.5 py-2.5 hover:bg-muted/40 transition-colors cursor-pointer text-left border-b border-border last:border-0"
+                        >
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs font-semibold text-foreground truncate">{r.name}</p>
+                            <p className="text-[10px] text-muted-foreground">{r.symbol} · {r.exchange}</p>
+                          </div>
+                          <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-primary/10 text-primary shrink-0">
+                            {r.type === "MUTUALFUND" ? "MF" : r.type}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+
+            {/* Quantity + Buy price */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <NumberInput
+                label="Quantity (Units)"
+                value={quantityStr}
+                onChange={(v) => setQuantityStr(v)}
+                decimals
+                placeholder="e.g. 10 or 25.431"
+              />
+              <NumberInput
+                label="Avg Buy Price (per unit)"
+                value={buyPriceStr}
+                onChange={setBuyPriceStr}
+                decimals
+                prefix="₹"
+                placeholder="e.g. 1250.50"
+              />
+            </div>
+
+            {/* Computed summary */}
+            {linkedQty > 0 && linkedBuy > 0 && (
+              <div className="grid grid-cols-2 gap-3 p-3.5 bg-muted/30 border border-border rounded-xl text-sm">
+                <div>
+                  <p className="text-[10px] text-muted-foreground uppercase tracking-wider font-semibold">Invested</p>
+                  <p className="font-bold text-foreground">₹{linkedInvested.toLocaleString("en-IN")}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] text-muted-foreground uppercase tracking-wider font-semibold">Current Value (live)</p>
+                  <p className={`font-bold ${linkedCurrent >= linkedInvested ? "text-emerald-400" : "text-rose-400"}`}>
+                    {livePrice !== null ? `₹${linkedCurrent.toLocaleString("en-IN")}` : "fetching…"}
+                  </p>
+                </div>
+                {liveCurrency !== "INR" && (
+                  <p className="col-span-2 text-[10px] text-amber-400">
+                    Note: this asset trades in {liveCurrency} — values are tracked in {liveCurrency}, not ₹.
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Purchase Date — used for accurate CAGR */}
         <div>
@@ -818,6 +1059,15 @@ export const Investments: React.FC = () => {
                             <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-500 bg-emerald-500/10 border border-emerald-500/20 px-1.5 py-0.5 rounded-md">
                               <RefreshCw className="w-2.5 h-2.5" />
                               SIP
+                            </span>
+                          )}
+                          {inv.tracking_mode === "linked" && inv.symbol && (
+                            <span
+                              className="inline-flex items-center gap-1 text-[10px] font-bold text-cyan-500 dark:text-cyan-400 bg-cyan-500/10 border border-cyan-500/20 px-1.5 py-0.5 rounded-md"
+                              title={`Auto-updated from live price of ${inv.symbol}`}
+                            >
+                              <Radio className="w-2.5 h-2.5" />
+                              LIVE · {inv.symbol}
                             </span>
                           )}
                         </div>

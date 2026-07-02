@@ -10,6 +10,8 @@ import {
   getGoals,
   updateProfile as dbUpdateProfile,
   addTransaction,
+  getPreference,
+  setPreference,
 } from "../lib/db";
 import type {
   Profile,
@@ -142,6 +144,36 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     try { setCustomCategories(JSON.parse(localStorage.getItem(`finfree_custom_categories_${uid}`) || "[]")); } catch { setCustomCategories([]); }
     try { setCustomAccountTypes(JSON.parse(localStorage.getItem(`finfree_custom_accounts_${uid}`) || "[]")); } catch { setCustomAccountTypes([]); }
     try { setCustomAssetTypes(JSON.parse(localStorage.getItem(`finfree_custom_assets_${uid}`) || "[]")); } catch { setCustomAssetTypes([]); }
+
+    // Sync budgets + starred accounts from the preference store (cloud/local DB).
+    // localStorage above is just a fast cache — the store is the source of truth.
+    // If the store is empty but localStorage has values, migrate them up once.
+    (async () => {
+      try {
+        const [storedBudgets, storedStarred] = await Promise.all([
+          getPreference<Record<string, number>>(uid, 'budget_limits'),
+          getPreference<string[]>(uid, 'starred_accounts'),
+        ]);
+
+        if (storedBudgets && Object.keys(storedBudgets).length > 0) {
+          setBudgetLimitsState(storedBudgets);
+          localStorage.setItem('finfree_budget_limits', JSON.stringify(storedBudgets));
+        } else {
+          const cached = JSON.parse(localStorage.getItem('finfree_budget_limits') || '{}');
+          if (Object.keys(cached).length > 0) await setPreference(uid, 'budget_limits', cached);
+        }
+
+        if (storedStarred && storedStarred.length > 0) {
+          setStarredAccountIds(storedStarred);
+          localStorage.setItem(`finfree_starred_accounts_${uid}`, JSON.stringify(storedStarred));
+        } else {
+          const cached = JSON.parse(localStorage.getItem(`finfree_starred_accounts_${uid}`) || '[]');
+          if (cached.length > 0) await setPreference(uid, 'starred_accounts', cached);
+        }
+      } catch (e) {
+        console.warn('Preference sync failed (using local cache):', e);
+      }
+    })();
   }, [user?.id]);
 
   const updateProfileImage = (url: string) => {
@@ -167,6 +199,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         ? prev.filter((itemId) => itemId !== id)
         : [...prev, id];
       localStorage.setItem(`finfree_starred_accounts_${user.id}`, JSON.stringify(updated));
+      setPreference(user.id, 'starred_accounts', updated).catch(() => {});
       showToast(prev.includes(id) ? "Account removed from favorites" : "Account starred!", "success");
       return updated;
     });
@@ -295,6 +328,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const updated = { ...budgetLimits, [category]: amount };
     setBudgetLimitsState(updated);
     localStorage.setItem('finfree_budget_limits', JSON.stringify(updated));
+    if (user?.id) setPreference(user.id, 'budget_limits', updated).catch(() => {});
   };
 
   const removeBudgetLimit = (category: string) => {
@@ -302,6 +336,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     delete updated[category];
     setBudgetLimitsState(updated);
     localStorage.setItem('finfree_budget_limits', JSON.stringify(updated));
+    if (user?.id) setPreference(user.id, 'budget_limits', updated).catch(() => {});
   };
 
   const showToast = (message: string, type: ToastType) => {
