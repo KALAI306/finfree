@@ -51,10 +51,17 @@ const PROVIDER_COLORS: Record<Provider, string> = {
   OpenRouter:  '#8b5cf6',
 };
 
-const GEMINI_MODELS     = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-2.0-flash-lite', 'gemini-1.5-flash', 'gemini-1.5-pro'];
-const GROQ_MODELS       = ['llama3-70b-8192', 'llama3-8b-8192', 'llama-3.1-8b-instant', 'mixtral-8x7b-32768', 'gemma-7b-it'];
-const HF_MODELS         = ['mistralai/Mistral-7B-Instruct-v0.3', 'Qwen/Qwen2.5-7B-Instruct', 'meta-llama/Llama-3.1-8B-Instruct'];
-const OPENROUTER_MODELS = ['google/gemma-3-27b-it:free', 'meta-llama/llama-3.3-70b-instruct:free', 'mistralai/mistral-7b-instruct:free', 'google/gemini-2.0-flash-exp:free'];
+const GEMINI_MODELS     = ['gemini-2.5-flash-lite', 'gemini-2.5-flash', 'gemini-2.0-flash'];
+const GROQ_MODELS       = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'llama3-8b-8192'];
+const HF_MODELS         = ['Qwen/Qwen2.5-7B-Instruct', 'mistralai/Mistral-7B-Instruct-v0.3', 'meta-llama/Llama-3.1-8B-Instruct'];
+const OPENROUTER_MODELS = ['nvidia/nemotron-3-super-120b-a12b:free', 'google/gemma-4-31b-it:free', 'openrouter/free'];
+
+const PROVIDER_INFO: Record<Provider, { desc: string; keyPrefix: string; badge?: string; badgeColor?: string }> = {
+  Gemini:      { desc: 'Best quality, native tool calling', keyPrefix: 'AQ.', badge: 'Recommended', badgeColor: 'text-primary bg-primary/10' },
+  Groq:        { desc: 'Fastest, 14,400 req/day free',      keyPrefix: 'gsk_', badge: 'Fast',        badgeColor: 'text-emerald-400 bg-emerald-500/10' },
+  HuggingFace: { desc: 'Open-source fallback, always free', keyPrefix: 'hf_',  badge: 'Free',        badgeColor: 'text-amber-400 bg-amber-500/10' },
+  OpenRouter:  { desc: 'Multi-model router, free tier',     keyPrefix: 'sk-or-', badge: 'Free',      badgeColor: 'text-violet-400 bg-violet-500/10' },
+};
 
 // ── Sub-components ──────────────────────────────────────────────────────────
 
@@ -342,8 +349,8 @@ export const AISettings: React.FC = () => {
           <span className="text-xs text-muted-foreground font-mono truncate">{workerUrl}</span>
         </div>
         <div className="flex items-center gap-4 text-xs text-muted-foreground">
-          <span>🔑 {health.keys_configured} keys configured</span>
-          <span>📊 {health.total_ai_calls.toLocaleString('en-IN')} total calls</span>
+          <span className="flex items-center gap-1"><Key className="w-3 h-3" /> {health.keys_configured} keys configured</span>
+          <span className="flex items-center gap-1"><Activity className="w-3 h-3" /> {health.total_ai_calls.toLocaleString('en-IN')} total calls</span>
         </div>
       </div>
 
@@ -366,34 +373,83 @@ export const AISettings: React.FC = () => {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
 
         {/* Provider Control */}
-        <SectionCard title="AI Provider" icon={<Cpu className="w-4 h-4" />}>
+        <SectionCard title="AI Provider & Cascade" icon={<Cpu className="w-4 h-4" />}>
           {loadingSettings ? (
             <div className="space-y-2">
-              {PROVIDERS.map(p => <div key={p} className="h-10 bg-muted rounded-xl animate-pulse" />)}
+              {PROVIDERS.map(p => <div key={p} className="h-14 bg-muted rounded-xl animate-pulse" />)}
             </div>
-          ) : (
-            <div className="space-y-2">
-              {PROVIDERS.map(p => {
-                const isActive = (settings.ai_provider || 'Gemini') === p;
-                return (
-                  <button
-                    key={p}
-                    onClick={() => handleProviderChange(p)}
-                    disabled={savingProvider}
-                    className={`w-full flex items-center justify-between px-4 py-3 rounded-xl border transition-all cursor-pointer ${isActive ? 'bg-primary/10 border-primary/30 text-primary' : 'border-border bg-muted/30 text-muted-foreground hover:text-foreground hover:border-border/80'}`}
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className={`w-2 h-2 rounded-full ${isActive ? 'bg-primary animate-pulse' : 'bg-muted-foreground/40'}`} />
-                      <span className="text-sm font-semibold">{p}</span>
-                      {p === 'Gemini' && <span className="text-[10px] bg-primary/10 text-primary px-1.5 py-0.5 rounded font-bold">Recommended</span>}
-                      {p === 'OpenRouter' && <span className="text-[10px] bg-violet-500/10 text-violet-400 px-1.5 py-0.5 rounded font-bold">Free</span>}
-                    </div>
-                    {isActive && <CheckCircle className="w-4 h-4 text-primary" />}
-                  </button>
-                );
-              })}
-            </div>
-          )}
+          ) : (() => {
+            const primaryProvider = (settings.ai_provider || 'Gemini') as Provider;
+            const FALLBACK_ORDER: Provider[] = ['Gemini', 'Groq', 'HuggingFace', 'OpenRouter'];
+            const cascadeOrder: Provider[] = [primaryProvider, ...FALLBACK_ORDER.filter(p => p !== primaryProvider)];
+            const providerHasKey: Record<string, boolean> = {
+              Gemini:      !!(settings.ai_key_gemini_1 || settings.ai_key_gemini_2 || settings.ai_key_gemini_3),
+              Groq:        !!settings.ai_key_groq_1,
+              HuggingFace: !!settings.ai_key_hf_1,
+              OpenRouter:  !!settings.ai_key_openrouter_1,
+            };
+            const positionLabel = ['PRIMARY', 'FALLBACK 1', 'FALLBACK 2', 'FALLBACK 3'];
+            return (
+              <div className="space-y-2">
+                {/* Cascade flow visualization */}
+                <div className="flex items-center gap-1 flex-wrap mb-3">
+                  {cascadeOrder.map((p, i) => (
+                    <React.Fragment key={p}>
+                      <span className={`text-[10px] font-bold px-2 py-1 rounded-lg border ${i === 0 ? 'bg-primary/10 text-primary border-primary/20' : 'bg-muted text-muted-foreground border-border/40'}`}>
+                        {p}
+                      </span>
+                      {i < cascadeOrder.length - 1 && <span className="text-muted-foreground text-[10px]">→</span>}
+                    </React.Fragment>
+                  ))}
+                </div>
+                {/* Provider cards in fixed visual order */}
+                {PROVIDERS.map(p => {
+                  const isActive   = primaryProvider === p;
+                  const position   = cascadeOrder.indexOf(p);
+                  const hasKey     = providerHasKey[p];
+                  const info       = PROVIDER_INFO[p];
+                  return (
+                    <button
+                      key={p}
+                      onClick={() => handleProviderChange(p)}
+                      disabled={savingProvider}
+                      className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl border transition-all cursor-pointer ${isActive ? 'bg-primary/10 border-primary/30' : 'border-border bg-muted/30 hover:border-border/80'}`}
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        {/* Cascade position badge */}
+                        <span className={`shrink-0 w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-extrabold border ${isActive ? 'bg-primary text-primary-foreground border-primary' : 'bg-muted text-muted-foreground border-border'}`}>
+                          {position + 1}
+                        </span>
+                        <div className="min-w-0 text-left">
+                          <div className="flex items-center gap-1.5">
+                            <span className={`text-sm font-semibold ${isActive ? 'text-primary' : 'text-foreground'}`}>{p}</span>
+                            {info.badge && (
+                              <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${info.badgeColor}`}>{info.badge}</span>
+                            )}
+                            {isActive && (
+                              <span className="text-[10px] px-1.5 py-0.5 rounded font-bold bg-primary/10 text-primary border border-primary/20">PRIMARY</span>
+                            )}
+                          </div>
+                          <p className="text-[10px] text-muted-foreground">{info.desc}</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0 ml-2">
+                        {/* Key status */}
+                        <span className={`text-[10px] font-semibold flex items-center gap-1 ${hasKey ? 'text-emerald-400' : 'text-rose-400'}`}>
+                          <span className={`w-1.5 h-1.5 rounded-full ${hasKey ? 'bg-emerald-400' : 'bg-rose-400'}`} />
+                          {hasKey ? 'Key set' : 'No key'}
+                        </span>
+                        {isActive && <CheckCircle className="w-4 h-4 text-primary" />}
+                      </div>
+                    </button>
+                  );
+                })}
+                <p className="text-[10px] text-muted-foreground pt-1">
+                  The AI tries the PRIMARY provider first and automatically cascades to fallbacks on quota or errors.
+                </p>
+              </div>
+            );
+          })()}
         </SectionCard>
 
         {/* Model Selectors */}
@@ -402,10 +458,10 @@ export const AISettings: React.FC = () => {
             <div className="space-y-4">{[1, 2, 3, 4].map(i => <div key={i} className="h-12 bg-muted rounded-xl animate-pulse" />)}</div>
           ) : (
             <div className="space-y-4">
-              <ModelSelect label="Gemini Model"      settingKey="ai_gemini_model"     value={settings.ai_gemini_model     || 'gemini-2.0-flash'}           options={GEMINI_MODELS}     onSave={handleSaveSetting} />
-              <ModelSelect label="Groq Model"        settingKey="ai_groq_model"       value={settings.ai_groq_model       || 'llama3-70b-8192'}             options={GROQ_MODELS}       onSave={handleSaveSetting} />
-              <ModelSelect label="HuggingFace Model" settingKey="ai_hf_model"         value={settings.ai_hf_model         || 'mistralai/Mistral-7B-Instruct-v0.3'} options={HF_MODELS} onSave={handleSaveSetting} />
-              <ModelSelect label="OpenRouter Model"  settingKey="ai_openrouter_model" value={settings.ai_openrouter_model || 'google/gemma-3-27b-it:free'}  options={OPENROUTER_MODELS} onSave={handleSaveSetting} />
+              <ModelSelect label="Gemini Model"      settingKey="ai_gemini_model"     value={settings.ai_gemini_model     || 'gemini-2.5-flash-lite'}              options={GEMINI_MODELS}     onSave={handleSaveSetting} />
+              <ModelSelect label="Groq Model"        settingKey="ai_groq_model"       value={settings.ai_groq_model       || 'llama-3.3-70b-versatile'}            options={GROQ_MODELS}       onSave={handleSaveSetting} />
+              <ModelSelect label="HuggingFace Model" settingKey="ai_hf_model"         value={settings.ai_hf_model         || 'Qwen/Qwen2.5-7B-Instruct'}           options={HF_MODELS}         onSave={handleSaveSetting} />
+              <ModelSelect label="OpenRouter Model"  settingKey="ai_openrouter_model" value={settings.ai_openrouter_model || 'nvidia/nemotron-3-super-120b-a12b:free'} options={OPENROUTER_MODELS} onSave={handleSaveSetting} />
             </div>
           )}
         </SectionCard>
