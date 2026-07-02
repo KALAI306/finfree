@@ -28,12 +28,130 @@ import { Modal } from "../components/Modal";
 import { TransactionForm } from "./Transactions.tsx";
 import { localDb, type NetWorthSnapshot } from "../lib/localdb";
 
+// ── Net Worth History Chart ─────────────────────────────────────────────────
+
+const NwChart: React.FC<{ data: NetWorthSnapshot[]; accentColor: string }> = ({ data, accentColor }) => {
+  const [tooltip, setTooltip] = React.useState<{ x: number; y: number; val: number; label: string } | null>(null);
+
+  const W = 600, H = 160, PAD = { t: 12, r: 16, b: 32, l: 10 };
+  const innerW = W - PAD.l - PAD.r;
+  const innerH = H - PAD.t - PAD.b;
+
+  const vals  = data.map(s => s.net_worth);
+  const min   = Math.min(...vals);
+  const max   = Math.max(...vals);
+  const range = max - min || 1;
+  const n     = vals.length;
+
+  const px = (i: number) => PAD.l + (i / (n - 1)) * innerW;
+  const py = (v: number) => PAD.t + innerH - ((v - min) / range) * innerH;
+
+  // Smooth bezier path
+  const points = vals.map((v, i) => ({ x: px(i), y: py(v) }));
+  let linePath = `M ${points[0].x},${points[0].y}`;
+  for (let i = 1; i < points.length; i++) {
+    const cp1x = points[i - 1].x + (points[i].x - points[i - 1].x) * 0.5;
+    const cp2x = points[i].x - (points[i].x - points[i - 1].x) * 0.5;
+    linePath += ` C ${cp1x},${points[i - 1].y} ${cp2x},${points[i].y} ${points[i].x},${points[i].y}`;
+  }
+  const areaPath = `${linePath} L ${points[n - 1].x},${H - PAD.b} L ${points[0].x},${H - PAD.b} Z`;
+
+  // Y-axis grid: 3 lines
+  const gridVals = [min, min + range * 0.5, max];
+  const fmt = (v: number) => v >= 1e7 ? `₹${(v / 1e7).toFixed(1)}Cr` : v >= 1e5 ? `₹${(v / 1e5).toFixed(1)}L` : `₹${Math.round(v / 1000)}K`;
+
+  return (
+    <div className="space-y-1">
+      <svg
+        viewBox={`0 0 ${W} ${H}`}
+        className="w-full overflow-visible"
+        style={{ height: 180 }}
+        onMouseLeave={() => setTooltip(null)}
+      >
+        <defs>
+          <linearGradient id="nwAreaGrad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%"   stopColor={accentColor} stopOpacity="0.25" />
+            <stop offset="80%"  stopColor={accentColor} stopOpacity="0.04" />
+            <stop offset="100%" stopColor={accentColor} stopOpacity="0" />
+          </linearGradient>
+        </defs>
+
+        {/* Horizontal grid lines */}
+        {gridVals.map((gv, i) => (
+          <g key={i}>
+            <line
+              x1={PAD.l} y1={py(gv)} x2={W - PAD.r} y2={py(gv)}
+              stroke="currentColor" strokeOpacity="0.07" strokeWidth="1" strokeDasharray="3 4"
+              className="text-foreground"
+            />
+            <text x={PAD.l - 4} y={py(gv) + 3.5} textAnchor="end" fontSize="9" fill="currentColor" fillOpacity="0.4" className="text-foreground">
+              {fmt(gv)}
+            </text>
+          </g>
+        ))}
+
+        {/* Area fill */}
+        <path d={areaPath} fill="url(#nwAreaGrad)" />
+
+        {/* Line */}
+        <path d={linePath} fill="none" stroke={accentColor} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+
+        {/* Month labels on X-axis */}
+        {points.map((pt, i) => {
+          const raw   = data[i].month;           // e.g. "2026-07"
+          const parts = raw.split('-');
+          const label = parts.length >= 2
+            ? new Date(Number(parts[0]), Number(parts[1]) - 1, 1).toLocaleString('en-IN', { month: 'short' })
+            : raw.slice(5);
+          const showLabel = n <= 6 || i % Math.ceil(n / 6) === 0 || i === n - 1;
+          return showLabel ? (
+            <text key={i} x={pt.x} y={H - 4} textAnchor="middle" fontSize="9.5" fill="currentColor" fillOpacity="0.45" className="text-foreground">{label}</text>
+          ) : null;
+        })}
+
+        {/* Interactive dots */}
+        {points.map((pt, i) => (
+          <g key={i} className="cursor-pointer" onMouseEnter={() => setTooltip({ x: pt.x, y: pt.y, val: vals[i], label: data[i].month })}>
+            <circle cx={pt.x} cy={pt.y} r="14" fill="transparent" />
+            <circle cx={pt.x} cy={pt.y} r={tooltip?.label === data[i].month ? 5 : 3.5} fill={accentColor} strokeWidth={tooltip?.label === data[i].month ? 2 : 0} stroke="hsl(var(--background))" />
+          </g>
+        ))}
+
+        {/* Tooltip */}
+        {tooltip && (() => {
+          const raw    = tooltip.label.split('-');
+          const month  = raw.length >= 2 ? new Date(Number(raw[0]), Number(raw[1]) - 1, 1).toLocaleString('en-IN', { month: 'short', year: '2-digit' }) : tooltip.label;
+          const tw     = 110, th = 36;
+          const tx     = Math.min(Math.max(tooltip.x - tw / 2, PAD.l), W - PAD.r - tw);
+          const ty     = tooltip.y - th - 10;
+          return (
+            <g>
+              <rect x={tx} y={ty} width={tw} height={th} rx="6" fill="hsl(var(--card))" stroke={accentColor} strokeOpacity="0.5" strokeWidth="1" />
+              <text x={tx + tw / 2} y={ty + 13} textAnchor="middle" fontSize="9" fill="currentColor" fillOpacity="0.55" className="text-foreground">{month}</text>
+              <text x={tx + tw / 2} y={ty + 27} textAnchor="middle" fontSize="11" fontWeight="700" fill={accentColor}>{fmt(tooltip.val)}</text>
+            </g>
+          );
+        })()}
+      </svg>
+
+      {/* Bottom stat row */}
+      <div className="flex justify-between text-[11px] pt-1 border-t border-border/30">
+        <span className="text-muted-foreground">Lowest: <span className="font-mono text-foreground">{fmt(min)}</span></span>
+        <span className="text-muted-foreground">Change: <span className={`font-mono font-bold ${vals[n - 1] >= vals[0] ? 'text-emerald-400' : 'text-rose-400'}`}>
+          {vals[n - 1] >= vals[0] ? '+' : ''}{fmt(vals[n - 1] - vals[0])}
+        </span></span>
+        <span className="text-muted-foreground">Latest: <span className="font-mono font-bold" style={{ color: accentColor }}>{fmt(vals[n - 1])}</span></span>
+      </div>
+    </div>
+  );
+};
+
 const CHART_COLORS: Record<string, string> = {
-  gold:   "#C9A13E",
-  green:  "#10b981",
-  blue:   "#3b82f6",
+  gold: "#C9A13E",
+  green: "#10b981",
+  blue: "#3b82f6",
   purple: "#8b5cf6",
-  rose:   "#f43f5e",
+  rose: "#f43f5e",
 };
 
 function getProjectedFreedomAge(
@@ -130,8 +248,8 @@ export const Dashboard: React.FC = () => {
     const d = new Date(t.date);
     return d.getFullYear() === curYear && d.getMonth() === curMonth;
   });
-  const monthlyIncome   = monthTxs.filter(t => t.type === "income").reduce((s, t) => s + Number(t.amount), 0);
-  const monthlyExpense  = monthTxs.filter(t => t.type === "expense").reduce((s, t) => s + Number(t.amount), 0);
+  const monthlyIncome = monthTxs.filter(t => t.type === "income").reduce((s, t) => s + Number(t.amount), 0);
+  const monthlyExpense = monthTxs.filter(t => t.type === "expense").reduce((s, t) => s + Number(t.amount), 0);
   const monthlyInvested = monthTxs.filter(t => {
     const cat = t.category || "";
     const note = (t.note || "").toLowerCase();
@@ -149,8 +267,8 @@ export const Dashboard: React.FC = () => {
   const emiStatus = emiRatio < 15
     ? { label: "Safe", color: "text-emerald-400", bg: "bg-emerald-500/10 border-emerald-500/20", fill: "#10b981" }
     : emiRatio <= 20
-    ? { label: "Caution", color: "text-amber-400", bg: "bg-amber-500/10 border-amber-500/20", fill: "#f59e0b" }
-    : { label: "Danger", color: "text-rose-400", bg: "bg-rose-500/10 border-rose-500/20", fill: "#ef4444" };
+      ? { label: "Caution", color: "text-amber-400", bg: "bg-amber-500/10 border-amber-500/20", fill: "#f59e0b" }
+      : { label: "Danger", color: "text-rose-400", bg: "bg-rose-500/10 border-rose-500/20", fill: "#ef4444" };
 
   const starredAccounts = accounts.filter(a => starredAccountIds.includes(a.id));
   const recentTxs = [...transactions].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()).slice(0, 6);
@@ -167,11 +285,10 @@ export const Dashboard: React.FC = () => {
     <div className="space-y-6 py-1">
 
       {/* ── Sync Status Banner ── */}
-      <div className={`flex items-center justify-between px-3 py-2 rounded-xl border text-xs font-medium ${
-        storageMode === 'cloud'
+      <div className={`flex items-center justify-between px-3 py-2 rounded-xl border text-xs font-medium ${storageMode === 'cloud'
           ? 'bg-emerald-500/5 border-emerald-500/15 text-emerald-400'
           : 'bg-amber-500/5 border-amber-500/15 text-amber-400'
-      }`}>
+        }`}>
         <div className="flex items-center gap-2">
           {storageMode === 'cloud'
             ? <Cloud className="w-3.5 h-3.5" />
@@ -371,45 +488,10 @@ export const Dashboard: React.FC = () => {
                   {formatIndianCurrency(nwHistory[0].net_worth)}
                 </p>
               </div>
-              <p className="text-[10px] text-muted-foreground text-right">History builds<br/>month by month</p>
+              <p className="text-[10px] text-muted-foreground text-right">History builds<br />month by month</p>
             </div>
           ) : (
-            <>
-              <div className="relative h-20">
-                <svg className="w-full h-full" viewBox={`0 0 ${nwHistory.length * 40} 80`} preserveAspectRatio="none">
-                  {(() => {
-                    const vals = nwHistory.map(s => s.net_worth);
-                    const min = Math.min(...vals);
-                    const max = Math.max(...vals);
-                    const range = max - min || 1;
-                    const pts = vals.map((v, i) => `${i * 40 + 20},${70 - ((v - min) / range) * 60}`).join(' ');
-                    const areaBot = `${(vals.length - 1) * 40 + 20},70 20,70`;
-                    return (
-                      <>
-                        <defs>
-                          <linearGradient id="nwGrad" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="0%" stopColor={accentColor} stopOpacity="0.3" />
-                            <stop offset="100%" stopColor={accentColor} stopOpacity="0.02" />
-                          </linearGradient>
-                        </defs>
-                        <polygon points={`${pts} ${areaBot}`} fill="url(#nwGrad)" />
-                        <polyline points={pts} fill="none" stroke={accentColor} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                        {vals.map((v, i) => (
-                          <circle key={i} cx={i * 40 + 20} cy={70 - ((v - min) / range) * 60} r="3" fill={accentColor} />
-                        ))}
-                      </>
-                    );
-                  })()}
-                </svg>
-                <div className="absolute bottom-0 left-0 right-0 flex justify-between text-[9px] text-muted-foreground/50 px-1">
-                  {nwHistory.map(s => <span key={s.month}>{s.month.slice(5)}</span>)}
-                </div>
-              </div>
-              <div className="flex justify-between mt-3 text-xs">
-                <span className="text-muted-foreground">Lowest: <span className="font-mono text-foreground">{formatIndianCurrency(Math.min(...nwHistory.map(s => s.net_worth)))}</span></span>
-                <span className="text-muted-foreground">Latest: <span className="font-mono font-bold" style={{ color: accentColor }}>{formatIndianCurrency(nwHistory[nwHistory.length - 1]?.net_worth ?? 0)}</span></span>
-              </div>
-            </>
+            <NwChart data={nwHistory} accentColor={accentColor} />
           )}
         </div>
       )}
@@ -704,8 +786,8 @@ export const Dashboard: React.FC = () => {
                     {isIncome
                       ? <ArrowUpRight className="w-4 h-4 text-emerald-400" />
                       : isTransfer
-                      ? <ArrowRightLeft className="w-4 h-4 text-amber-400" />
-                      : <ArrowDownRight className="w-4 h-4 text-rose-400" />
+                        ? <ArrowRightLeft className="w-4 h-4 text-amber-400" />
+                        : <ArrowDownRight className="w-4 h-4 text-rose-400" />
                     }
                   </div>
                 </div>

@@ -306,7 +306,7 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
           MOBILE MORE DRAWER
       ──────────────────────────────────────── */}
       <FloatingAiAssistant />
-      {showWelcomeTour && <WelcomeTour onClose={dismissWelcomeTour} />}
+      {showWelcomeTour && <WelcomeTour onComplete={dismissWelcomeTour} />}
 
       {drawerOpen && (
         <div

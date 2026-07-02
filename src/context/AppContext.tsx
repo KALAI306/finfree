@@ -37,7 +37,7 @@ interface AppContextType {
   profile: Profile | null;
   isAdmin: boolean;
   showWelcomeTour: boolean;
-  dismissWelcomeTour: () => void;
+  dismissWelcomeTour: (profileData?: { name: string; age: string; monthly_salary: string; family_debt: string } | null) => void;
   accounts: Account[];
   transactions: Transaction[];
   investments: Investment[];
@@ -553,18 +553,34 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         await autoCreateRecurring(user.id);
       };
       runDataLoad();
-      const key = `finfree_welcomed_${user.id}`;
-      if (!localStorage.getItem(key)) {
-        setShowWelcomeTour(true);
-      }
     }
   }, [user]);
 
-  const dismissWelcomeTour = () => {
-    if (user?.id) {
-      localStorage.setItem(`finfree_welcomed_${user.id}`, "1");
+  // Show tour only for new users (no name set in profile yet)
+  useEffect(() => {
+    if (profile !== null && !profile.name) {
+      setShowWelcomeTour(true);
     }
+  }, [profile?.name]);
+
+  const dismissWelcomeTour = async (
+    profileData?: { name: string; age: string; monthly_salary: string; family_debt: string } | null
+  ) => {
     setShowWelcomeTour(false);
+    if (profileData?.name && profile) {
+      try {
+        const updated = await dbUpdateProfile({
+          id: profile.id,
+          name: profileData.name.trim(),
+          age: profileData.age ? Number(profileData.age) : undefined,
+          monthly_salary: profileData.monthly_salary ? Number(profileData.monthly_salary) : undefined,
+          family_debt: profileData.family_debt ? Number(profileData.family_debt) : undefined,
+        });
+        setProfile(updated);
+      } catch (e) {
+        console.error('Tour profile save failed:', e);
+      }
+    }
   };
 
   return (

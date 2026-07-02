@@ -1,7 +1,7 @@
 import React, { useState } from "react";
-import { Flame, Wallet, ArrowUpDown, TrendingUp, Target, ChevronRight, X } from "lucide-react";
+import { Flame, Wallet, ArrowUpDown, TrendingUp, Target, ChevronRight, X, User } from "lucide-react";
 
-const STEPS = [
+const INFO_STEPS = [
   {
     icon: Flame,
     title: "Welcome to FinFree!",
@@ -39,48 +39,123 @@ const STEPS = [
   },
 ];
 
-interface WelcomeTourProps {
-  onClose: () => void;
+export interface TourProfileData {
+  name: string;
+  age: string;
+  monthly_salary: string;
+  family_debt: string;
 }
 
-export const WelcomeTour: React.FC<WelcomeTourProps> = ({ onClose }) => {
-  const [step, setStep] = useState(0);
-  const current = STEPS[step];
-  const Icon = current.icon;
-  const isLast = step === STEPS.length - 1;
+interface WelcomeTourProps {
+  onComplete: (profile: TourProfileData | null) => void;
+}
+
+export const WelcomeTour: React.FC<WelcomeTourProps> = ({ onComplete }) => {
+  const [step, setStep]   = useState(0);
+  const [profile, setProfile] = useState<TourProfileData>({ name: '', age: '', monthly_salary: '', family_debt: '' });
+
+  const totalSteps = INFO_STEPS.length + 1; // +1 for profile step
+  const isProfileStep = step === INFO_STEPS.length;
+  const isLast = step === totalSteps - 1;
+
+  const current = !isProfileStep ? INFO_STEPS[step] : null;
+  const Icon    = current?.icon ?? User;
+
+  const handleNext = () => {
+    if (isLast) {
+      onComplete(profile.name.trim() ? profile : null);
+    } else {
+      setStep(s => s + 1);
+    }
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm px-4">
-      <div className="hero-card p-8 max-w-sm w-full relative animate-fade-in-up">
-        {/* Close */}
+      <div className="hero-card p-6 md:p-8 max-w-sm w-full relative animate-fade-in-up">
+        {/* Close / skip */}
         <button
-          onClick={onClose}
+          onClick={() => onComplete(null)}
           className="absolute top-4 right-4 text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
           aria-label="Skip tour"
         >
           <X className="w-4 h-4" />
         </button>
 
-        {/* Step icon */}
-        <div className={`w-16 h-16 rounded-2xl ${current.bg} flex items-center justify-center mx-auto mb-6`}>
-          <Icon className={`w-8 h-8 ${current.color}`} strokeWidth={1.8} />
-        </div>
-
-        {/* Content */}
-        <h2 className="text-xl font-bold text-foreground text-center mb-3">{current.title}</h2>
-        <p className="text-sm text-muted-foreground text-center leading-relaxed mb-8">{current.desc}</p>
-
-        {/* Dots */}
-        <div className="flex justify-center gap-1.5 mb-6">
-          {STEPS.map((_, i) => (
+        {/* Step indicator */}
+        <div className="flex justify-center gap-1.5 mb-5">
+          {Array.from({ length: totalSteps }).map((_, i) => (
             <div
               key={i}
-              className={`h-1.5 rounded-full transition-all duration-300 ${
-                i === step ? "w-6 bg-primary" : "w-1.5 bg-muted-foreground/30"
-              }`}
+              className={`h-1.5 rounded-full transition-all duration-300 ${i === step ? 'w-6 bg-primary' : i < step ? 'w-3 bg-primary/40' : 'w-1.5 bg-muted-foreground/25'}`}
             />
           ))}
         </div>
+
+        {!isProfileStep ? (
+          /* ── Info step ── */
+          <>
+            <div className={`w-14 h-14 rounded-2xl ${current!.bg} flex items-center justify-center mx-auto mb-5`}>
+              <Icon className={`w-7 h-7 ${current!.color}`} strokeWidth={1.8} />
+            </div>
+            <h2 className="text-xl font-bold text-foreground text-center mb-2">{current!.title}</h2>
+            <p className="text-sm text-muted-foreground text-center leading-relaxed mb-7">{current!.desc}</p>
+          </>
+        ) : (
+          /* ── Profile setup step ── */
+          <>
+            <div className="w-14 h-14 rounded-2xl bg-primary/10 flex items-center justify-center mx-auto mb-5">
+              <User className="w-7 h-7 text-primary" strokeWidth={1.8} />
+            </div>
+            <h2 className="text-xl font-bold text-foreground text-center mb-1">Set Up Your Profile</h2>
+            <p className="text-xs text-muted-foreground text-center mb-5">Help FinFree personalize your experience</p>
+            <div className="space-y-3 mb-6">
+              <div>
+                <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider block mb-1">Your Name *</label>
+                <input
+                  type="text"
+                  value={profile.name}
+                  onChange={e => setProfile(p => ({ ...p, name: e.target.value }))}
+                  placeholder="e.g. Kalai"
+                  className="w-full bg-background border border-border rounded-xl py-2.5 px-3 text-sm text-foreground focus:outline-none focus:border-primary/60"
+                  autoFocus
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider block mb-1">Age</label>
+                  <input
+                    type="number"
+                    value={profile.age}
+                    onChange={e => setProfile(p => ({ ...p, age: e.target.value }))}
+                    placeholder="21"
+                    min={10} max={80}
+                    className="w-full bg-background border border-border rounded-xl py-2.5 px-3 text-sm text-foreground focus:outline-none focus:border-primary/60"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider block mb-1">Monthly Salary (₹)</label>
+                  <input
+                    type="number"
+                    value={profile.monthly_salary}
+                    onChange={e => setProfile(p => ({ ...p, monthly_salary: e.target.value }))}
+                    placeholder="20000"
+                    className="w-full bg-background border border-border rounded-xl py-2.5 px-3 text-sm text-foreground focus:outline-none focus:border-primary/60"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider block mb-1">Total Debt / Loans (₹)</label>
+                <input
+                  type="number"
+                  value={profile.family_debt}
+                  onChange={e => setProfile(p => ({ ...p, family_debt: e.target.value }))}
+                  placeholder="0"
+                  className="w-full bg-background border border-border rounded-xl py-2.5 px-3 text-sm text-foreground focus:outline-none focus:border-primary/60"
+                />
+              </div>
+            </div>
+          </>
+        )}
 
         {/* Buttons */}
         <div className="flex gap-3">
@@ -93,18 +168,17 @@ export const WelcomeTour: React.FC<WelcomeTourProps> = ({ onClose }) => {
             </button>
           )}
           <button
-            onClick={() => isLast ? onClose() : setStep(s => s + 1)}
-            className="flex-1 btn-primary py-2.5 flex items-center justify-center gap-1.5 cursor-pointer"
+            onClick={handleNext}
+            disabled={isProfileStep && !profile.name.trim()}
+            className="flex-1 btn-primary py-2.5 flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
           >
-            {isLast ? "Get Started!" : (
-              <>Next <ChevronRight className="w-4 h-4" /></>
-            )}
+            {isLast ? 'Get Started!' : (<>Next <ChevronRight className="w-4 h-4" /></>)}
           </button>
         </div>
 
         {!isLast && (
           <button
-            onClick={onClose}
+            onClick={() => onComplete(null)}
             className="w-full text-center text-xs text-muted-foreground hover:text-foreground mt-3 transition-colors cursor-pointer"
           >
             Skip tour

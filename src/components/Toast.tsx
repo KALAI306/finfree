@@ -6,36 +6,34 @@ export const ToastContainer: React.FC = () => {
   const { toasts, removeToast } = useApp();
 
   return (
-    <div className="fixed top-4 right-4 z-[9999] flex flex-col gap-2 w-full max-w-sm px-4 md:px-0 pointer-events-none">
+    <div className="fixed top-4 right-4 z-[9999] flex flex-col gap-2 pointer-events-none" style={{ maxWidth: 320 }}>
       {toasts.map((toast) => {
-        const typeStyles = {
-          success: "bg-emerald-950/90 text-emerald-300 border-emerald-500/30 shadow-emerald-950/20",
-          warning: "bg-amber-950/90 text-amber-300 border-amber-500/30 shadow-amber-950/20",
-          error: "bg-rose-950/90 text-rose-300 border-rose-500/30 shadow-rose-950/20",
-          info: "bg-sky-950/90 text-sky-300 border-sky-500/30 shadow-sky-950/20",
-        };
+        const accent = {
+          success: { border: 'border-l-emerald-500', icon: 'text-emerald-500', bg: 'bg-card' },
+          warning: { border: 'border-l-amber-500',   icon: 'text-amber-500',   bg: 'bg-card' },
+          error:   { border: 'border-l-rose-500',    icon: 'text-rose-500',    bg: 'bg-card' },
+          info:    { border: 'border-l-sky-500',     icon: 'text-sky-500',     bg: 'bg-card' },
+        }[toast.type];
 
         const icons = {
-          success: <CheckCircle className="w-5 h-5 text-emerald-400 shrink-0" />,
-          warning: <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0" />,
-          error: <AlertCircle className="w-5 h-5 text-rose-400 shrink-0" />,
-          info: <Info className="w-5 h-5 text-sky-400 shrink-0" />,
+          success: <CheckCircle  className={`w-4 h-4 shrink-0 ${accent.icon}`} />,
+          warning: <AlertTriangle className={`w-4 h-4 shrink-0 ${accent.icon}`} />,
+          error:   <AlertCircle  className={`w-4 h-4 shrink-0 ${accent.icon}`} />,
+          info:    <Info         className={`w-4 h-4 shrink-0 ${accent.icon}`} />,
         };
 
         return (
           <div
             key={toast.id}
-            className={`pointer-events-auto flex items-start gap-3 p-4 rounded-xl border backdrop-blur-md shadow-lg transition-all duration-300 transform translate-y-0 animate-in slide-in-from-top-4 ${typeStyles[toast.type]}`}
+            className={`pointer-events-auto flex items-center gap-3 pl-3 pr-2 py-3 rounded-xl border border-l-4 shadow-xl backdrop-blur-sm transition-all duration-200 animate-in slide-in-from-right-4 ${accent.bg} border-border ${accent.border}`}
           >
             {icons[toast.type]}
-            <div className="flex-1 text-sm font-medium pr-2 leading-relaxed">
-              {toast.message}
-            </div>
+            <p className="flex-1 text-xs font-medium text-foreground leading-snug">{toast.message}</p>
             <button
               onClick={() => removeToast(toast.id)}
-              className="text-current opacity-70 hover:opacity-100 transition-opacity p-0.5 rounded-lg hover:bg-white/10"
+              className="shrink-0 p-1 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
             >
-              <X className="w-4 h-4" />
+              <X className="w-3.5 h-3.5" />
             </button>
           </div>
         );
