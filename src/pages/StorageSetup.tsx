@@ -49,10 +49,7 @@ export const StorageSetup: React.FC<Props> = ({ onDone }) => {
               <Smartphone className={`w-6 h-6 ${selected === 'local' ? 'text-primary' : 'text-muted-foreground'}`} />
             </div>
             <div className="flex-1">
-              <div className="flex items-center gap-2">
-                <h3 className="font-semibold text-foreground">Local Only</h3>
-                <span className="text-[10px] bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded-full font-semibold uppercase tracking-wide">Recommended</span>
-              </div>
+              <h3 className="font-semibold text-foreground">Local Only</h3>
               <p className="text-xs text-muted-foreground mt-1">Data stays on your phone. No account needed. 100% private.</p>
               <div className="flex flex-wrap gap-3 mt-3">
                 {['No internet needed', 'Fully private', 'Works offline'].map(t => (

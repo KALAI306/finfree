@@ -241,6 +241,18 @@ export const Investments: React.FC = () => {
     const [symResults, setSymResults] = useState<SymbolSearchResult[]>([]);
     const [symSearching, setSymSearching] = useState(false);
     const symTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const symBoxRef = useRef<HTMLDivElement>(null);
+
+    // Close the results dropdown when tapping outside it
+    useEffect(() => {
+      const handler = (e: PointerEvent) => {
+        if (symBoxRef.current && !symBoxRef.current.contains(e.target as Node)) {
+          setSymResults([]);
+        }
+      };
+      document.addEventListener("pointerdown", handler);
+      return () => document.removeEventListener("pointerdown", handler);
+    }, []);
 
     // Debounced symbol search
     useEffect(() => {
@@ -656,7 +668,7 @@ export const Investments: React.FC = () => {
           /* Live linked — pick a symbol, value auto-updates from market price */
           <div className="space-y-4">
             {/* Symbol picker */}
-            <div className="relative">
+            <div className="relative" ref={symBoxRef}>
               <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider block mb-1">
                 Linked Stock / Mutual Fund
               </label>
@@ -1016,13 +1028,24 @@ export const Investments: React.FC = () => {
                     ))}
                   </Pie>
                   <Tooltip
-                    contentStyle={{
-                      backgroundColor: "var(--card)",
-                      borderColor: "var(--border)",
-                      borderRadius: "12px",
-                      color: "var(--foreground)",
+                    content={({ active, payload }) => {
+                      if (!active || !payload?.length) return null;
+                      const item = payload[0];
+                      const total = activePieData.reduce((s, d) => s + d.value, 0);
+                      const pct = total > 0 ? ((Number(item.value) / total) * 100).toFixed(1) : "0";
+                      return (
+                        <div className="bg-card/95 backdrop-blur border border-border rounded-xl px-3 py-2 shadow-xl">
+                          <div className="flex items-center gap-1.5">
+                            <span className="w-2 h-2 rounded-full shrink-0" style={{ background: (item.payload as any).color }} />
+                            <span className="text-xs font-semibold text-foreground">{item.name}</span>
+                          </div>
+                          <p className="text-sm font-bold text-foreground m-0 mt-0.5">
+                            {formatIndianCurrency(Number(item.value))}
+                            <span className="text-xs font-semibold text-muted-foreground ml-1.5">{pct}%</span>
+                          </p>
+                        </div>
+                      );
                     }}
-                    formatter={(value: any) => [formatIndianCurrency(value), "Value"]}
                   />
                   <Legend
                     layout="horizontal"

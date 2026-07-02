@@ -57,6 +57,18 @@ export const Markets: React.FC = () => {
   const [results, setResults] = useState<SymbolSearchResult[]>([]);
   const [searching, setSearching] = useState(false);
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const searchBoxRef = useRef<HTMLDivElement>(null);
+
+  // Close the search results dropdown when tapping/clicking anywhere outside it
+  useEffect(() => {
+    const handler = (e: PointerEvent) => {
+      if (searchBoxRef.current && !searchBoxRef.current.contains(e.target as Node)) {
+        setResults([]);
+      }
+    };
+    document.addEventListener("pointerdown", handler);
+    return () => document.removeEventListener("pointerdown", handler);
+  }, []);
 
   const effectiveList = watchlist.length > 0 ? watchlist : STARTER_WATCHLIST;
 
@@ -200,7 +212,7 @@ export const Markets: React.FC = () => {
       </div>
 
       {/* Search */}
-      <div className="relative">
+      <div className="relative" ref={searchBoxRef}>
         <div className="flex items-center gap-2 bg-background border border-border rounded-xl px-3">
           <Search className="w-4 h-4 text-muted-foreground shrink-0" />
           <input

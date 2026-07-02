@@ -95,9 +95,11 @@ export const CustomSelect: React.FC<CustomSelectProps> = ({
       {/* Overlay + Bottom Sheet */}
       {open && (
         <>
-          {/* Backdrop */}
+          {/* Backdrop — pointerdown fires reliably on touch, unlike click which
+              can be swallowed if the finger moves a few px (scroll intent) */}
           <div
             className="fixed inset-0 bg-black/50 backdrop-blur-[2px] z-40 animate-fade-in"
+            onPointerDown={() => setOpen(false)}
             onClick={() => setOpen(false)}
           />
 

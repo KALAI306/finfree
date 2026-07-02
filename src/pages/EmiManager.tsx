@@ -936,8 +936,21 @@ export const EmiManager: React.FC = () => {
                       ))}
                     </Pie>
                     <Tooltip
-                      contentStyle={{ backgroundColor: "var(--card)", borderColor: "var(--border)", borderRadius: "10px", color: "var(--foreground)" }}
-                      formatter={(value: any) => [formatIndianCurrency(value), ""]}
+                      content={({ active, payload }) => {
+                        if (!active || !payload?.length) return null;
+                        const item = payload[0];
+                        const total = plannerPieData.reduce((s: number, d: any) => s + d.value, 0);
+                        const pct = total > 0 ? ((Number(item.value) / total) * 100).toFixed(1) : "0";
+                        return (
+                          <div className="bg-card/95 backdrop-blur border border-border rounded-xl px-3 py-2 shadow-xl">
+                            <p className="text-xs font-semibold text-foreground m-0">{item.name}</p>
+                            <p className="text-sm font-bold text-foreground m-0 mt-0.5">
+                              {formatIndianCurrency(Number(item.value))}
+                              <span className="text-xs font-semibold text-muted-foreground ml-1.5">{pct}%</span>
+                            </p>
+                          </div>
+                        );
+                      }}
                     />
                     <Legend
                       layout="vertical"

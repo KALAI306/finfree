@@ -1,24 +1,27 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, Suspense, lazy } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AppProvider, useApp } from "./context/AppContext";
 import { Layout } from "./components/Layout";
 import { Auth } from "./pages/Auth";
 import { Dashboard } from "./pages/Dashboard";
-import { Transactions } from "./pages/Transactions";
-import { Investments } from "./pages/Investments";
-import { Markets } from "./pages/Markets";
-import { EmiManager } from "./pages/EmiManager";
-import { FreedomCalculator } from "./pages/FreedomCalculator";
-import { Goals } from "./pages/Goals";
-import { Budgets } from "./pages/Budgets";
-import { RulesDashboard } from "./pages/RulesDashboard";
-import { Reports } from "./pages/Reports";
-import { Settings } from "./pages/Settings";
-import { AISettings } from "./pages/AISettings";
-import { Accounts } from "./pages/Accounts";
-import { AdminPanel } from "./pages/AdminPanel";
-import { ResetPassword } from "./pages/ResetPassword";
 import { StorageSetup } from "./pages/StorageSetup";
+
+// Route-level code splitting — keeps the initial bundle small so first paint
+// and navigation stay snappy, especially on mid-range Android phones.
+const Transactions      = lazy(() => import("./pages/Transactions").then(m => ({ default: m.Transactions })));
+const Investments       = lazy(() => import("./pages/Investments").then(m => ({ default: m.Investments })));
+const Markets           = lazy(() => import("./pages/Markets").then(m => ({ default: m.Markets })));
+const EmiManager        = lazy(() => import("./pages/EmiManager").then(m => ({ default: m.EmiManager })));
+const FreedomCalculator = lazy(() => import("./pages/FreedomCalculator").then(m => ({ default: m.FreedomCalculator })));
+const Goals             = lazy(() => import("./pages/Goals").then(m => ({ default: m.Goals })));
+const Budgets           = lazy(() => import("./pages/Budgets").then(m => ({ default: m.Budgets })));
+const RulesDashboard    = lazy(() => import("./pages/RulesDashboard").then(m => ({ default: m.RulesDashboard })));
+const Reports           = lazy(() => import("./pages/Reports").then(m => ({ default: m.Reports })));
+const Settings          = lazy(() => import("./pages/Settings").then(m => ({ default: m.Settings })));
+const AISettings        = lazy(() => import("./pages/AISettings").then(m => ({ default: m.AISettings })));
+const Accounts          = lazy(() => import("./pages/Accounts").then(m => ({ default: m.Accounts })));
+const AdminPanel        = lazy(() => import("./pages/AdminPanel").then(m => ({ default: m.AdminPanel })));
+const ResetPassword     = lazy(() => import("./pages/ResetPassword").then(m => ({ default: m.ResetPassword })));
 import { ToastContainer } from "./components/Toast";
 import { BiometricLock } from "./components/BiometricLock";
 import { Flame } from "lucide-react";
@@ -58,6 +61,13 @@ const AppContent: React.FC = () => {
   }
 
   return (
+    <Suspense
+      fallback={
+        <div className="min-h-[50vh] flex items-center justify-center">
+          <div className="w-8 h-8 rounded-full border-2 border-primary/20 border-t-primary animate-spin" />
+        </div>
+      }
+    >
     <Routes>
       {/* Public route — accessible without login */}
       <Route path="/reset-password" element={<><ResetPassword /><ToastContainer /></>} />
@@ -68,6 +78,13 @@ const AppContent: React.FC = () => {
       ) : (
         <Route path="/*" element={
           <Layout>
+            <Suspense
+              fallback={
+                <div className="min-h-[50vh] flex items-center justify-center">
+                  <div className="w-8 h-8 rounded-full border-2 border-primary/20 border-t-primary animate-spin" />
+                </div>
+              }
+            >
             <Routes>
               <Route path="/" element={<Dashboard />} />
               <Route path="/accounts" element={<Accounts />} />
@@ -85,10 +102,12 @@ const AppContent: React.FC = () => {
               <Route path="/admin" element={<AdminPanel />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
+            </Suspense>
           </Layout>
         } />
       )}
     </Routes>
+    </Suspense>
   );
 };
 

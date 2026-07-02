@@ -382,6 +382,34 @@
 }
 
 /* ═══════════════════════════════════════
+   CHARTS — kill the focus rectangle & tap
+   highlight that Android draws around SVG
+   chart elements when touched
+   ═══════════════════════════════════════ */
+
+/* App-like touch feel: no grey flash on taps anywhere */
+html, body, * {
+  -webkit-tap-highlight-color: transparent;
+}
+
+.recharts-wrapper,
+.recharts-wrapper *,
+.recharts-surface,
+.recharts-sector,
+.recharts-layer,
+svg,
+svg * {
+  outline: none !important;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.recharts-sector:focus,
+.recharts-surface:focus,
+.recharts-wrapper:focus {
+  outline: none !important;
+}
+
+/* ═══════════════════════════════════════
    FORMS & INPUTS
    ═══════════════════════════════════════ */
 

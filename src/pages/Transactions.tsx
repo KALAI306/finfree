@@ -548,6 +548,31 @@ export const Transactions: React.FC = () => {
   const [filterAccount, setFilterAccount] = useState("all");
   const [filterCategory, setFilterCategory] = useState("all");
 
+  // Sort order + quick date-range presets
+  const [sortOrder, setSortOrder] = useState("date_desc");
+  const [datePreset, setDatePreset] = useState("all");
+
+  // Applying a preset fills the start/end date fields so the user can still fine-tune
+  const applyDatePreset = (preset: string) => {
+    setDatePreset(preset);
+    const now = new Date();
+    const iso = (d: Date) => d.toISOString().split("T")[0];
+    if (preset === "all") { setStartDate(""); setEndDate(""); return; }
+    if (preset === "this_month") {
+      setStartDate(iso(new Date(now.getFullYear(), now.getMonth(), 1)));
+      setEndDate(iso(now));
+    } else if (preset === "last_month") {
+      setStartDate(iso(new Date(now.getFullYear(), now.getMonth() - 1, 1)));
+      setEndDate(iso(new Date(now.getFullYear(), now.getMonth(), 0)));
+    } else if (preset === "quarter") {
+      setStartDate(iso(new Date(now.getFullYear(), now.getMonth() - 2, 1)));
+      setEndDate(iso(now));
+    } else if (preset === "year") {
+      setStartDate(iso(new Date(now.getFullYear(), 0, 1)));
+      setEndDate(iso(now));
+    }
+  };
+
   const toggleSelect = (id: string) => {
     setSelectedIds(prev => {
       const next = new Set(prev);
@@ -596,7 +621,7 @@ export const Transactions: React.FC = () => {
   const allCategories = Array.from(new Set(transactions.map(t => t.category))).sort();
 
   // Filter logic
-  const filteredTxs = transactions.filter((tx) => {
+  const filteredTxsUnsorted = transactions.filter((tx) => {
     if (activeTab !== "all" && tx.type !== activeTab) return false;
 
     if (searchQuery) {
@@ -617,6 +642,16 @@ export const Transactions: React.FC = () => {
     if (filterCategory !== "all" && tx.category !== filterCategory) return false;
 
     return true;
+  });
+
+  // Sort — default newest first (matches DB order); other orders sort a copy
+  const filteredTxs = [...filteredTxsUnsorted].sort((a, b) => {
+    switch (sortOrder) {
+      case "date_asc":    return new Date(a.date).getTime() - new Date(b.date).getTime();
+      case "amount_desc": return Number(b.amount) - Number(a.amount);
+      case "amount_asc":  return Number(a.amount) - Number(b.amount);
+      default:            return new Date(b.date).getTime() - new Date(a.date).getTime();
+    }
   });
 
   const totalIncome = filteredTxs.filter(t => t.type === "income").reduce((sum, t) => sum + Number(t.amount), 0);
@@ -781,6 +816,18 @@ export const Transactions: React.FC = () => {
             className="min-w-[150px] flex-1 md:flex-none"
             searchable={allCategories.length > 6}
           />
+          <CustomSelect
+            options={[
+              { value: "date_desc",   label: "Newest First",   icon: "↓" },
+              { value: "date_asc",    label: "Oldest First",   icon: "↑" },
+              { value: "amount_desc", label: "Amount: High → Low", icon: "₹" },
+              { value: "amount_asc",  label: "Amount: Low → High", icon: "₹" },
+            ]}
+            value={sortOrder}
+            onChange={setSortOrder}
+            placeholder="Sort"
+            className="min-w-[150px] flex-1 md:flex-none"
+          />
           {hasPillFilters && (
             <button
               onClick={() => { setFilterType("all"); setFilterAccount("all"); setFilterCategory("all"); }}
@@ -797,33 +844,58 @@ export const Transactions: React.FC = () => {
         </p>
 
         {/* Date Filters Row */}
-        <div className="flex flex-col md:flex-row items-end md:items-center gap-3 pt-2 border-t border-border">
+        <div className="flex flex-col gap-3 pt-2 border-t border-border">
+          {/* Quick range chips */}
+          <div className="flex items-center gap-1.5 flex-wrap">
+            {[
+              { key: "all",        label: "All Time" },
+              { key: "this_month", label: "This Month" },
+              { key: "last_month", label: "Last Month" },
+              { key: "quarter",    label: "Last 3 Months" },
+              { key: "year",       label: "This Year" },
+            ].map(p => (
+              <button
+                key={p.key}
+                onClick={() => applyDatePreset(p.key)}
+                className={`px-3 py-1.5 rounded-full text-[11px] font-semibold transition-colors cursor-pointer ${
+                  datePreset === p.key
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-muted/50 text-muted-foreground hover:text-foreground border border-border"
+                }`}
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
+
+          <div className="flex flex-col md:flex-row items-end md:items-center gap-3">
           <div className="flex items-center gap-2 w-full md:w-auto">
             <Calendar className="w-4 h-4 text-muted-foreground" />
             <span className="text-xs text-muted-foreground">Date:</span>
             <input
               type="date"
               value={startDate}
-              onChange={(e) => setStartDate(e.target.value)}
+              onChange={(e) => { setStartDate(e.target.value); setDatePreset(""); }}
               className="bg-background border border-border rounded-xl py-1 px-2 text-foreground text-xs focus:outline-none focus:border-primary"
             />
             <span className="text-xs text-muted-foreground">to</span>
             <input
               type="date"
               value={endDate}
-              onChange={(e) => setEndDate(e.target.value)}
+              onChange={(e) => { setEndDate(e.target.value); setDatePreset(""); }}
               className="bg-background border border-border rounded-xl py-1 px-2 text-foreground text-xs focus:outline-none focus:border-primary"
             />
           </div>
 
           {hasAnyFilter && (
             <button
-              onClick={handleClearFilters}
-              className="text-xs text-rose-500 hover:text-rose-605 font-semibold flex items-center gap-1 ml-auto transition-colors"
+              onClick={() => { handleClearFilters(); setDatePreset("all"); setSortOrder("date_desc"); }}
+              className="text-xs text-rose-500 hover:text-rose-400 font-semibold flex items-center gap-1 ml-auto transition-colors"
             >
               <X className="w-3.5 h-3.5" /> Clear All Filters
             </button>
           )}
+          </div>
         </div>
       </div>
 
