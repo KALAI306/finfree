@@ -6,7 +6,20 @@ on:
   workflow_dispatch: # allows manual trigger from GitHub UI
 
 jobs:
+  deploy-edge-functions:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+      - name: Deploy finfree-mcp Edge Function
+        run: supabase functions deploy finfree-mcp --project-ref bggwwntxlydtxlxlukrx
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+
   build:
+    needs: deploy-edge-functions
     runs-on: ubuntu-latest
 
     steps:
