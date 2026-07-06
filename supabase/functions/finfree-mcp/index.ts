@@ -4,7 +4,7 @@ const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? '';
 const SUPABASE_SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
 
 const INVESTMENT_TYPES = ['mutual_fund', 'stock', 'gold', 'silver'] as const;
-const ACCOUNT_TYPES = ['savings', 'current', 'cash', 'wallet', 'fd', 'ppf', 'nps', 'crypto', 'other'];
+const ACCOUNT_TYPES = ['savings', 'current', 'cash', 'wallet', 'fd', 'ppf', 'nps', 'crypto', 'salary', 'investment', 'emergency', 'other'];
 
 const TOOLS = [
   // ── READ ──────────────────────────────────────────────────────────────────────
@@ -189,14 +189,14 @@ const TOOLS = [
   },
   {
     name: 'update_account',
-    description: "Update an account's name or type by ID. Balance is NOT editable here — it is auto-calculated from transactions.",
+    description: "Update an account's name or type by ID. Provide name, type, or both — only supplied fields are changed. Balance is NOT editable here — it is auto-calculated from transactions.",
     inputSchema: {
       type: 'object',
       required: ['id'],
       properties: {
         id:   { type: 'string', description: 'Account UUID from list_accounts' },
         name: { type: 'string', description: 'New account name' },
-        type: { type: 'string', description: 'New account type' },
+        type: { type: 'string', description: `New account type. Valid values: ${ACCOUNT_TYPES.join(', ')}. Custom strings are also accepted.` },
       },
     },
   },
@@ -862,7 +862,7 @@ Deno.serve(async (req: Request) => {
         serverInfo: {
           name: 'finfree',
           title: 'FinFree',
-          version: '3.0.0',
+          version: '3.2.0',
           websiteUrl: 'https://finfree-teal.vercel.app',
           icons: [{ src: 'https://finfree-teal.vercel.app/icon-512.png', mimeType: 'image/png', sizes: ['512x512'] }],
         },

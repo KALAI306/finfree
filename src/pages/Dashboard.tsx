@@ -259,7 +259,9 @@ export const Dashboard: React.FC = () => {
   }).reduce((s, t) => s + Number(t.amount), 0);
 
   const activeExpenses = monthTxs.filter(t => t.type === "expense" && !t.category.includes("EMI")).reduce((s, t) => s + Number(t.amount), 0);
-  const monthlySurplus = monthlySalary - activeExpenses - totalMonthlyEmi;
+  // Use actual transaction income if available; fall back to profile salary
+  const effectiveIncome = monthlyIncome > 0 ? monthlyIncome : monthlySalary;
+  const monthlySurplus = effectiveIncome - activeExpenses - totalMonthlyEmi;
 
   const projectedFreedomAge = getProjectedFreedomAge(currentAge, positiveNetWorth, Math.max(monthlySurplus, 500), 12, freedomTarget);
   const yearsToFreedom = projectedFreedomAge > currentAge ? projectedFreedomAge - currentAge : 0;
@@ -458,7 +460,7 @@ export const Dashboard: React.FC = () => {
           <div className="mt-4 pt-4 border-t border-border/40 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 text-xs text-muted-foreground">
             <span>
               Assumes monthly surplus{" "}
-              <strong className="text-foreground font-mono">{formatIndianCurrency(Math.max(monthlySurplus, 0))}</strong>
+              <strong className="text-foreground font-mono">{formatIndianCurrency(monthlySurplus)}</strong>
               {" "}@ 12% p.a.
             </span>
             <Link to="/freedom" className="text-primary hover:underline flex items-center gap-1 shrink-0">
@@ -673,7 +675,7 @@ export const Dashboard: React.FC = () => {
           <div className="flex items-end gap-4">
             <div>
               <div className="text-3xl font-bold font-mono" style={{ color: accentColor }}>
-                {monthlySavingsRate > 0 ? monthlySavingsRate.toFixed(0) : 0}%
+                {monthlySavingsRate.toFixed(0)}%
               </div>
               <div className="text-xs text-muted-foreground mt-1">of monthly income</div>
             </div>
