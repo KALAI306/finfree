@@ -238,12 +238,19 @@ export const NumberInput: React.FC<NumberInputProps> = ({
           value={value}
           placeholder={placeholder}
           onFocus={e => e.target.select()}
+          onKeyDown={e => {
+            // Android WebView sometimes swallows Backspace on controlled inputs — let it through.
+            if (e.key === "Backspace" || e.key === "Delete") e.stopPropagation();
+          }}
           onChange={e => {
             const raw = e.target.value;
+            // Allow anything that's a valid intermediate numeric state (including empty).
+            // Sanitise: strip anything not digit or dot, collapse multiple dots.
             if (decimals) {
-              if (/^[0-9]*\.?[0-9]*$/.test(raw)) onChange(raw);
+              const clean = raw.replace(/[^0-9.]/g, "").replace(/^(\d*\.?\d*).*$/, "$1");
+              onChange(clean);
             } else {
-              if (/^[0-9]*$/.test(raw)) onChange(raw);
+              onChange(raw.replace(/[^0-9]/g, ""));
             }
           }}
           className={`w-full bg-background border rounded-xl py-3 text-foreground text-sm focus:outline-none focus:border-gold-500 transition-colors min-h-[48px]

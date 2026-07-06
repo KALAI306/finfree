@@ -10,7 +10,7 @@ const TOOLS = [
   // ── READ ──────────────────────────────────────────────────────────────────────
   {
     name: 'financial_summary',
-    description: "Get a complete financial snapshot: net worth, accounts, monthly income/expenses, investments, EMIs, goals. Use this first to understand the user's financial picture before any other query.",
+    description: "Get a complete financial snapshot: net worth, accounts, monthly income/expenses, investments, EMIs, goals, and budget health. Use this first to understand the user's financial picture before any other query.",
     inputSchema: { type: 'object', properties: {} },
   },
   {
@@ -66,7 +66,7 @@ const TOOLS = [
   },
   {
     name: 'list_investments',
-    description: 'List all investments with invested amount, current value, and return percentage.',
+    description: 'List all investments with invested amount, current value, return percentage, tracking mode (manual/live), live ticker symbol, and purchase date.',
     inputSchema: { type: 'object', properties: {} },
   },
   {
@@ -79,10 +79,15 @@ const TOOLS = [
     description: 'List all active EMIs/loans with principal, interest rate, monthly EMI, tenure, and paid months.',
     inputSchema: { type: 'object', properties: {} },
   },
+  {
+    name: 'list_budgets',
+    description: "List all monthly budget limits with this month's actual spending, percent used, and status (ok / warning / over). Use this to check budget health or before setting/removing a budget.",
+    inputSchema: { type: 'object', properties: {} },
+  },
   // ── TRANSACTIONS ──────────────────────────────────────────────────────────────
   {
     name: 'add_transaction',
-    description: 'Record a single income or expense transaction. Provide either account_id (from list_accounts) or account_name (matched case-insensitively) — account_name is easier when you don\'t already have the UUID.',
+    description: "Record a single income or expense transaction. Provide either account_id (from list_accounts) or account_name (matched case-insensitively) — account_name is easier when you don't already have the UUID.",
     inputSchema: {
       type: 'object',
       required: ['type', 'amount', 'category', 'date'],
@@ -184,7 +189,7 @@ const TOOLS = [
   },
   {
     name: 'update_account',
-    description: "Update an account's name or type by ID. Balance is NOT editable here — it is auto-calculated from transactions. To change the opening balance, use update_account with a new initial reference point isn't supported; adjust via a transaction instead.",
+    description: "Update an account's name or type by ID. Balance is NOT editable here — it is auto-calculated from transactions.",
     inputSchema: {
       type: 'object',
       required: ['id'],
@@ -220,12 +225,16 @@ const TOOLS = [
         current_value:   { type: 'number', description: 'Current market value' },
         quantity:        { type: 'number', description: 'Number of units/shares (optional)' },
         return_percent:  { type: 'number', description: 'Return percentage, auto-calculated if omitted' },
+        tracking_mode:   { type: 'string', enum: ['manual', 'live'], description: '"manual" = you update the value yourself; "live" = current_value is auto-updated from live market prices using symbol. Default is "manual".' },
+        symbol:          { type: 'string', description: 'Ticker/exchange symbol used for live price lookups (e.g. "RELIANCE.NS", "NIFTY50", "BTC-USD"). Required when tracking_mode is "live".' },
+        buy_price:       { type: 'number', description: 'Average buy price per unit in the asset\'s native currency (e.g. USD for US stocks, INR for Indian stocks). Used with quantity to calculate invested_amount. For foreign assets the app converts to INR automatically.' },
+        purchase_date:   { type: 'string', description: 'Date the investment was purchased, YYYY-MM-DD. Used to calculate CAGR accurately. If omitted, the record creation date is used as a fallback (which will show 0% CAGR for new records).' },
       },
     },
   },
   {
     name: 'update_investment',
-    description: 'Update an existing investment by ID. Only provided fields are changed. Return % is auto-calculated if invested_amount and current_value are both updated.',
+    description: 'Update an existing investment by ID. Only provided fields are changed. Return % is auto-calculated when both invested_amount and current_value are updated. To switch to live price tracking, set tracking_mode="live" AND provide a symbol.',
     inputSchema: {
       type: 'object',
       required: ['id'],
@@ -233,10 +242,14 @@ const TOOLS = [
         id:              { type: 'string', description: 'Investment UUID from list_investments' },
         name:            { type: 'string', description: 'New investment name' },
         type:            { type: 'string', enum: [...INVESTMENT_TYPES], description: `New type, lowercase. One of: ${INVESTMENT_TYPES.join(', ')}` },
-        invested_amount: { type: 'number', description: 'New cost basis amount' },
+        invested_amount: { type: 'number', description: 'New cost basis / total amount invested' },
         current_value:   { type: 'number', description: 'New current market value' },
         quantity:        { type: 'number', description: 'New quantity/units' },
-        return_percent:  { type: 'number', description: 'New return %, or omit to auto-calculate' },
+        return_percent:  { type: 'number', description: 'Explicit return %, or omit to auto-calculate when both invested_amount and current_value are provided' },
+        tracking_mode:   { type: 'string', enum: ['manual', 'live'], description: '"manual" = you update current_value yourself; "live" = current_value is auto-updated from live market data via symbol. When setting to "live", symbol is required.' },
+        symbol:          { type: 'string', description: 'Ticker/exchange symbol for live price lookups (e.g. "RELIANCE.NS", "HDFCBANK.BO", "BTC-USD"). Required when tracking_mode is "live". Ignored when tracking_mode is "manual".' },
+        buy_price:       { type: 'number', description: 'Average buy price per unit in the asset\'s native currency (e.g. USD for US stocks, INR for Indian stocks). The app converts to INR for dashboard display.' },
+        purchase_date:   { type: 'string', description: 'Original purchase date YYYY-MM-DD. Corrects CAGR calculation — if the investment was bought before it was added to the app, set this to the actual purchase date.' },
       },
     },
   },
@@ -351,6 +364,44 @@ const TOOLS = [
       },
     },
   },
+  // ── BUDGETS ───────────────────────────────────────────────────────────────────
+  {
+    name: 'set_budget',
+    description: 'Create or update a monthly spending limit for a category (upsert). The category must match the category strings used in transactions (e.g. "Food 🍕"). Use list_budgets first to see existing limits.',
+    inputSchema: {
+      type: 'object',
+      required: ['category', 'monthly_limit'],
+      properties: {
+        category:      { type: 'string', description: 'Category name exactly as used in transactions, e.g. "Food 🍕", "Fuel ⛽", "Entertainment 🎬"' },
+        monthly_limit: { type: 'number', description: 'Monthly spending limit in rupees (must be > 0)' },
+      },
+    },
+  },
+  {
+    name: 'delete_budget',
+    description: 'Remove the monthly budget limit for a category. The category name is matched case-insensitively (partial match ok).',
+    inputSchema: {
+      type: 'object',
+      required: ['category'],
+      properties: {
+        category: { type: 'string', description: 'Category name to remove the limit for (partial match ok, e.g. "food" matches "Food 🍕")' },
+      },
+    },
+  },
+  // ── PROFILE ───────────────────────────────────────────────────────────────────
+  {
+    name: 'update_profile',
+    description: 'Update the user profile — monthly salary, financial freedom target, display name, or age. Only provided fields are changed.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        name:           { type: 'string',  description: 'Display name' },
+        age:            { type: 'number',  description: 'Age in years' },
+        monthly_salary: { type: 'number',  description: 'Monthly take-home salary in rupees' },
+        freedom_target: { type: 'number',  description: 'Financial freedom net worth target in rupees' },
+      },
+    },
+  },
   // ── RESET ─────────────────────────────────────────────────────────────────────
   {
     name: 'reset_all_data',
@@ -395,13 +446,14 @@ async function handleTool(name: string, args: Record<string, unknown>, userId: s
   switch (name) {
 
     case 'financial_summary': {
-      const [profileRes, accsRes, txRes, invRes, emiRes, goalRes] = await Promise.all([
+      const [profileRes, accsRes, txRes, invRes, emiRes, goalRes, budgetRes] = await Promise.all([
         supabase.from('profiles').select('*').eq('id', userId).single(),
         supabase.from('accounts').select('*').eq('user_id', userId),
         supabase.from('transactions').select('*').eq('user_id', userId),
         supabase.from('investments').select('*').eq('user_id', userId),
         supabase.from('emis').select('*').eq('user_id', userId),
         supabase.from('goals').select('*').eq('user_id', userId),
+        supabase.from('budgets').select('*').eq('user_id', userId),
       ]);
       const profile = (profileRes.data || {}) as Record<string, unknown>;
       const accounts = accsRes.data || [];
@@ -409,21 +461,29 @@ async function handleTool(name: string, args: Record<string, unknown>, userId: s
       const investments = invRes.data || [];
       const emis = emiRes.data || [];
       const goals = goalRes.data || [];
+      const budgets = budgetRes.data || [];
       const totalCash = accounts.reduce((s: number, a: any) => s + Number(a.balance), 0);
       const totalInvested = investments.reduce((s: number, i: any) => s + Number(i.current_value), 0);
       const netWorth = totalCash + totalInvested - Number(profile.family_debt || 0);
       const monthStr = new Date().toISOString().slice(0, 7);
       const monthTxs = txs.filter((t: any) => t.date?.startsWith(monthStr));
+      const monthExpenseTxs = monthTxs.filter((t: any) => t.type === 'expense' && !t.transfer_to_account_id);
       const monthIncome = monthTxs.filter((t: any) => t.type === 'income').reduce((s: number, t: any) => s + Number(t.amount), 0);
-      const monthExpense = monthTxs.filter((t: any) => t.type === 'expense').reduce((s: number, t: any) => s + Number(t.amount), 0);
+      const monthExpense = monthExpenseTxs.reduce((s: number, t: any) => s + Number(t.amount), 0);
+      const budgetHealth = budgets.map((b: any) => {
+        const spent = monthExpenseTxs.filter((t: any) => t.category === b.category).reduce((s: number, t: any) => s + Number(t.amount), 0);
+        const pct = b.monthly_limit > 0 ? Math.round((spent / b.monthly_limit) * 100) : 0;
+        return { category: b.category, limit: b.monthly_limit, spent, pct, status: pct > 100 ? 'over' : pct >= 80 ? 'warning' : 'ok' };
+      });
       return {
         profile: { name: profile.name, age: profile.age, monthly_salary: profile.monthly_salary, freedom_target: profile.freedom_target },
         net_worth: { total: netWorth, liquid_cash: totalCash, invested: totalInvested, family_debt: profile.family_debt },
         this_month: { income: monthIncome, expenses: monthExpense, saved: monthIncome - monthExpense, savings_rate_pct: monthIncome > 0 ? Math.round(((monthIncome - monthExpense) / monthIncome) * 100) : null },
         accounts: accounts.map((a: any) => ({ id: a.id, name: a.name, type: a.type, balance: a.balance })),
-        investments: investments.map((i: any) => ({ id: i.id, name: i.name, type: i.type, invested: i.invested_amount, current_value: i.current_value, return_percent: i.return_percent })),
+        investments: investments.map((i: any) => ({ id: i.id, name: i.name, type: i.type, invested: i.invested_amount, current_value: i.current_value, return_percent: i.return_percent, tracking_mode: i.tracking_mode || 'manual', symbol: i.symbol || null, purchase_date: i.purchase_date || null })),
         emis: emis.map((e: any) => ({ id: e.id, name: e.name, emi_amount: e.emi_amount, principal: e.principal, paid_months: e.paid_months, tenure_months: e.tenure_months })),
         goals: goals.map((g: any) => ({ id: g.id, name: g.name, target: g.target_amount, saved: g.current_amount, progress_pct: g.target_amount > 0 ? Math.round((g.current_amount / g.target_amount) * 100) : 0, deadline: g.deadline })),
+        budget_health: { budgets: budgetHealth, over_count: budgetHealth.filter((b: any) => b.status === 'over').length, warning_count: budgetHealth.filter((b: any) => b.status === 'warning').length },
       };
     }
 
@@ -477,6 +537,21 @@ async function handleTool(name: string, args: Record<string, unknown>, userId: s
     case 'list_investments': { const { data, error } = await supabase.from('investments').select('*').eq('user_id', userId); if (error) throw error; return data; }
     case 'list_goals': { const { data, error } = await supabase.from('goals').select('*').eq('user_id', userId); if (error) throw error; return (data || []).map((g: any) => ({ ...g, progress_pct: g.target_amount > 0 ? Math.round((g.current_amount / g.target_amount) * 100) : 0 })); }
     case 'list_emis': { const { data, error } = await supabase.from('emis').select('*').eq('user_id', userId); if (error) throw error; return data; }
+
+    case 'list_budgets': {
+      const { data: budgets, error } = await supabase.from('budgets').select('*').eq('user_id', userId).order('category');
+      if (error) throw error;
+      if (!(budgets || []).length) return { budgets: [], message: "No budgets set yet. Use set_budget to create spending limits." };
+      const monthStr = new Date().toISOString().slice(0, 7);
+      const { data: txs } = await supabase.from('transactions').select('category,amount,transfer_to_account_id').eq('user_id', userId).eq('type', 'expense').like('date', `${monthStr}%`);
+      const monthExpenses = (txs || []).filter((t: any) => !t.transfer_to_account_id);
+      const rows = (budgets || []).map((b: any) => {
+        const spent = monthExpenses.filter((t: any) => t.category === b.category).reduce((s: number, t: any) => s + Number(t.amount), 0);
+        const pct = b.monthly_limit > 0 ? Math.round((spent / b.monthly_limit) * 100) : 0;
+        return { id: b.id, category: b.category, monthly_limit: b.monthly_limit, spent_this_month: spent, percent_used: pct, remaining: Math.max(0, b.monthly_limit - spent), status: pct > 100 ? 'over' : pct >= 80 ? 'warning' : 'ok' };
+      });
+      return { month: monthStr, budgets: rows, summary: { total_budget: rows.reduce((s: number, r: any) => s + r.monthly_limit, 0), total_spent: rows.reduce((s: number, r: any) => s + r.spent_this_month, 0), over_count: rows.filter((r: any) => r.status === 'over').length, warning_count: rows.filter((r: any) => r.status === 'warning').length, ok_count: rows.filter((r: any) => r.status === 'ok').length } };
+    }
 
     case 'add_transaction': {
       const accountId = await resolveAccountId(args, userId, supabase);
@@ -572,22 +647,51 @@ async function handleTool(name: string, args: Record<string, unknown>, userId: s
     }
 
     case 'add_investment': {
+      if (args.tracking_mode === 'live' && !args.symbol) {
+        throw new Error("symbol is required when tracking_mode is 'live'. Provide the ticker/exchange symbol (e.g. 'RELIANCE.NS', 'BTC-USD').");
+      }
       const rp = args.return_percent ?? (args.invested_amount && args.current_value ? Number(((Number(args.current_value) - Number(args.invested_amount)) / Number(args.invested_amount) * 100).toFixed(2)) : 0);
-      const { data, error } = await supabase.from('investments').insert([{ user_id: userId, name: args.name, type: args.type, invested_amount: args.invested_amount, current_value: args.current_value, quantity: args.quantity ?? null, return_percent: rp }]).select().single();
+      const { data, error } = await supabase.from('investments').insert([{
+        user_id: userId,
+        name: args.name,
+        type: args.type,
+        invested_amount: args.invested_amount,
+        current_value: args.current_value,
+        quantity: args.quantity ?? null,
+        return_percent: rp,
+        tracking_mode: args.tracking_mode ?? 'manual',
+        symbol: args.symbol ?? null,
+        buy_price: args.buy_price ?? null,
+        purchase_date: args.purchase_date ?? null,
+      }]).select().single();
       if (error) throw error;
       return { success: true, investment: data };
     }
 
     case 'update_investment': {
+      // Validate: live tracking requires a symbol
+      if (args.tracking_mode === 'live' && !args.symbol) {
+        // Check if the investment already has a symbol stored
+        const { data: existing } = await supabase.from('investments').select('symbol').eq('id', args.id as string).eq('user_id', userId).single();
+        if (!existing?.symbol) {
+          throw new Error("symbol is required when setting tracking_mode to 'live'. Provide the ticker/exchange symbol (e.g. 'RELIANCE.NS', 'HDFCBANK.BO', 'BTC-USD').");
+        }
+      }
       const updates: Record<string, unknown> = {};
       if (args.name !== undefined) updates.name = args.name;
       if (args.type !== undefined) updates.type = args.type;
       if (args.invested_amount !== undefined) updates.invested_amount = args.invested_amount;
       if (args.current_value !== undefined) updates.current_value = args.current_value;
       if (args.quantity !== undefined) updates.quantity = args.quantity;
-      if (args.return_percent !== undefined) updates.return_percent = args.return_percent;
-      else if (updates.invested_amount !== undefined && updates.current_value !== undefined)
+      if (args.tracking_mode !== undefined) updates.tracking_mode = args.tracking_mode;
+      if (args.symbol !== undefined) updates.symbol = args.symbol;
+      if (args.buy_price !== undefined) updates.buy_price = args.buy_price;
+      if (args.purchase_date !== undefined) updates.purchase_date = args.purchase_date;
+      if (args.return_percent !== undefined) {
+        updates.return_percent = args.return_percent;
+      } else if (updates.invested_amount !== undefined && updates.current_value !== undefined) {
         updates.return_percent = Number(((Number(updates.current_value) - Number(updates.invested_amount)) / Number(updates.invested_amount) * 100).toFixed(2));
+      }
       if (!Object.keys(updates).length) throw new Error('Provide at least one field to update.');
       const { data, error } = await supabase.from('investments').update(updates).eq('id', args.id as string).eq('user_id', userId).select().single();
       if (error) throw error;
@@ -658,6 +762,40 @@ async function handleTool(name: string, args: Record<string, unknown>, userId: s
       return { success: true };
     }
 
+    case 'set_budget': {
+      if (!args.category || (args.monthly_limit as number) <= 0) {
+        throw new Error('Provide a category and a monthly_limit greater than 0.');
+      }
+      const { error } = await supabase.from('budgets').upsert(
+        { user_id: userId, category: args.category, monthly_limit: args.monthly_limit, updated_at: new Date().toISOString() },
+        { onConflict: 'user_id,category' }
+      );
+      if (error) throw error;
+      return { success: true, message: `Budget set: ${args.category} → ₹${args.monthly_limit}/month` };
+    }
+
+    case 'delete_budget': {
+      const { data: budgets } = await supabase.from('budgets').select('id,category').eq('user_id', userId);
+      const q = String(args.category).toLowerCase();
+      const match = (budgets || []).find((b: any) => b.category.toLowerCase().includes(q));
+      if (!match) throw new Error(`No budget found matching "${args.category}". Use list_budgets to see all categories.`);
+      const { error } = await supabase.from('budgets').delete().eq('id', (match as any).id);
+      if (error) throw error;
+      return { success: true, message: `Budget removed for "${(match as any).category}"` };
+    }
+
+    case 'update_profile': {
+      const updates: Record<string, unknown> = {};
+      if (args.name !== undefined) updates.name = args.name;
+      if (args.age !== undefined) updates.age = args.age;
+      if (args.monthly_salary !== undefined) updates.monthly_salary = args.monthly_salary;
+      if (args.freedom_target !== undefined) updates.freedom_target = args.freedom_target;
+      if (!Object.keys(updates).length) throw new Error('Provide at least one field to update: name, age, monthly_salary, or freedom_target.');
+      const { data, error } = await supabase.from('profiles').update(updates).eq('id', userId).select().single();
+      if (error) throw error;
+      return { success: true, profile: data };
+    }
+
     case 'reset_all_data': {
       if (args.confirm !== true) {
         const [t, i, g, e] = await Promise.all([
@@ -666,7 +804,7 @@ async function handleTool(name: string, args: Record<string, unknown>, userId: s
           supabase.from('goals').select('id', { count: 'exact', head: true }).eq('user_id', userId),
           supabase.from('emis').select('id', { count: 'exact', head: true }).eq('user_id', userId),
         ]);
-        return { dry_run: true, warning: 'Pass confirm=true to execute.', will_delete: { transactions: t.count ?? 0, investments: i.count ?? 0, goals: g.count ?? 0, emis: e.count ?? 0 }, kept: ['accounts', 'profile'] };
+        return { dry_run: true, warning: 'Pass confirm=true to execute.', will_delete: { transactions: t.count ?? 0, investments: i.count ?? 0, goals: g.count ?? 0, emis: e.count ?? 0 }, kept: ['accounts', 'profile', 'budgets'] };
       }
       await Promise.all([
         supabase.from('transactions').delete().eq('user_id', userId),
@@ -674,7 +812,7 @@ async function handleTool(name: string, args: Record<string, unknown>, userId: s
         supabase.from('goals').delete().eq('user_id', userId),
         supabase.from('emis').delete().eq('user_id', userId),
       ]);
-      return { success: true, message: 'All transactions, investments, goals, and EMIs deleted. Accounts and profile kept.' };
+      return { success: true, message: 'All transactions, investments, goals, and EMIs deleted. Accounts, profile, and budgets kept.' };
     }
 
     default:
@@ -694,12 +832,6 @@ function rpc(id: unknown, body: Record<string, unknown>) {
 
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response(null, { headers: CORS });
-
-  // Per MCP Streamable HTTP transport spec, GET is only for opening an SSE
-  // stream for server-initiated messages. This server is stateless request/response
-  // JSON-only, so a GET here must return 405 — not a tools/list payload — otherwise
-  // a client probing for SSE support gets a confusing non-standard response and may
-  // abort the whole connection (showing as "no tools available").
   if (req.method === 'GET') return new Response(null, { status: 405, headers: CORS });
   if (req.method !== 'POST') return new Response(null, { status: 405, headers: CORS });
 
@@ -716,31 +848,32 @@ Deno.serve(async (req: Request) => {
 
   const { method, id } = json || {};
 
-  // JSON-RPC notifications (no "id") never get a JSON-RPC response body — only
-  // a bare 202. Falling through to an error response here (as the previous
-  // version did for notifications/initialized) makes some MCP clients treat
-  // the whole handshake as failed and silently report zero tools.
   if (typeof method === 'string' && method.startsWith('notifications/')) {
     return new Response(null, { status: 202, headers: CORS });
   }
 
   if (method === 'ping') return rpc(id, { result: {} });
 
-  // initialize and tools/list intentionally do NOT require the token — tool
-  // schemas are not sensitive, and gating discovery on auth was the main
-  // cause of "no tools available": any token timing/mismatch issue made
-  // tools/list fail before the client ever saw the tool list. Only tools/call
-  // (real data access) is auth-gated below.
   if (method === 'initialize') {
-    return rpc(id, { result: { protocolVersion: '2024-11-05', capabilities: { tools: {} }, serverInfo: { name: 'finfree', version: '2.1.0' } } });
+    return rpc(id, {
+      result: {
+        protocolVersion: '2024-11-05',
+        capabilities: { tools: {} },
+        serverInfo: {
+          name: 'finfree',
+          title: 'FinFree',
+          version: '3.0.0',
+          websiteUrl: 'https://finfree-teal.vercel.app',
+          icons: [{ src: 'https://finfree-teal.vercel.app/icon-512.png', mimeType: 'image/png', sizes: ['512x512'] }],
+        },
+      },
+    });
   }
 
   if (method === 'tools/list') {
     return rpc(id, { result: { tools: TOOLS } });
   }
 
-  // Defensive: respond gracefully if a client probes capabilities we didn't
-  // declare, instead of erroring the whole session.
   if (method === 'resources/list') return rpc(id, { result: { resources: [] } });
   if (method === 'prompts/list') return rpc(id, { result: { prompts: [] } });
 
