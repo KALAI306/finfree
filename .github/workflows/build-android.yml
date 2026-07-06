@@ -14,7 +14,7 @@ jobs:
         with:
           version: latest
       - name: Deploy finfree-mcp Edge Function
-        run: supabase functions deploy finfree-mcp --project-ref bggwwntxlydtxlxlukrx
+        run: supabase functions deploy finfree-mcp --project-ref jqqreupesjhzseyphxds --no-verify-jwt
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
 
