@@ -276,7 +276,7 @@ export const Dashboard: React.FC = () => {
 
   const starredAccounts = accounts.filter(a => starredAccountIds.includes(a.id));
   const recentTxs = [...transactions].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()).slice(0, 6);
-  const monthlySavingsRate = monthlyIncome > 0 ? ((monthlyIncome - monthlyExpense) / monthlyIncome) * 100 : 0;
+  const monthlySavingsRate = effectiveIncome > 0 ? ((effectiveIncome - monthlyExpense) / effectiveIncome) * 100 : 0;
 
   const [refreshing, setRefreshing] = useState(false);
   const handleRefresh = async () => {
