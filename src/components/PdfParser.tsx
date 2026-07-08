@@ -97,6 +97,138 @@ function parseWithRegex(text: string, accountId: string): ParsedTx[] {
   return results;
 }
 
+// ── Local (API-free) deterministic parser ────────────────────────────────────
+// Parses real Indian bank statement tables entirely in-browser — no network,
+// no LLM, no truncation limits. Uses the "balance-delta" method: when a Balance
+// column is present, the direction (income/expense) and amount are derived from
+// how the running balance changed, so we never have to guess which column is
+// Debit vs Credit.
+
+const MONTHS: Record<string, number> = {
+  jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6,
+  jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12,
+};
+const pad2 = (n: number) => String(n).padStart(2, "0");
+
+const AMOUNT_G = /\d[\d,]*\.\d{2}/g; // all amounts on a line (match-all)
+const AMOUNT_1 = /\d[\d,]*\.\d{2}/;  // presence test / index search
+const toNum = (s: string) => +s.replace(/,/g, "");
+
+// Match a date at the START of a line; return ISO date + remaining text, or null.
+function matchLeadingDate(line: string): { iso: string; rest: string } | null {
+  let m: RegExpMatchArray | null;
+
+  // YYYY-MM-DD
+  m = line.match(/^(\d{4})-(\d{2})-(\d{2})\b/);
+  if (m) return { iso: `${m[1]}-${m[2]}-${m[3]}`, rest: line.slice(m[0].length) };
+
+  // DD/MM/YYYY or DD-MM-YYYY (2- or 4-digit year)
+  m = line.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})\b/);
+  if (m) {
+    const d = +m[1], mo = +m[2]; let y = +m[3];
+    if (y < 100) y += 2000;
+    if (d >= 1 && d <= 31 && mo >= 1 && mo <= 12)
+      return { iso: `${y}-${pad2(mo)}-${pad2(d)}`, rest: line.slice(m[0].length) };
+  }
+
+  // DD MMM YYYY / DD-MMM-YY  (e.g. "03 Jun 2026", "03-Jun-26")
+  m = line.match(/^(\d{1,2})[\s\-]([A-Za-z]{3,})[\s\-](\d{2,4})\b/);
+  if (m) {
+    const mo = MONTHS[m[2].slice(0, 3).toLowerCase()];
+    const d = +m[1]; let y = +m[3];
+    if (y < 100) y += 2000;
+    if (mo && d >= 1 && d <= 31)
+      return { iso: `${y}-${pad2(mo)}-${pad2(d)}`, rest: line.slice(m[0].length) };
+  }
+
+  return null;
+}
+
+function parseStatementLocal(text: string, accountId: string): ParsedTx[] {
+  const out: ParsedTx[] = [];
+  let prevBalance: number | null = null;
+
+  for (const raw of text.split("\n")) {
+    const line = raw.trim();
+    if (!line) continue;
+
+    // Skip header rows ("Date … Description … Debit Credit Balance") with no amounts.
+    if (/\bdate\b/i.test(line)
+      && /\b(balance|debit|credit|withdrawal|deposit|description|particulars|narration)\b/i.test(line)
+      && !AMOUNT_1.test(line)) continue;
+
+    const dm = matchLeadingDate(line);
+
+    // No leading date → treat as a wrapped description line: append to previous txn.
+    if (!dm) {
+      if (out.length && !AMOUNT_1.test(line)) {
+        const prev = out[out.length - 1];
+        prev.note = (prev.note + " " + line).replace(/\s+/g, " ").trim().slice(0, 80);
+      }
+      continue;
+    }
+
+    let rest = dm.rest.trim();
+    // Some banks show two dates (Txn + Value date) — drop the second.
+    const vd = matchLeadingDate(rest);
+    if (vd) rest = vd.rest.trim();
+
+    const nums = rest.match(AMOUNT_G)?.map(toNum) ?? [];
+    if (!nums.length) continue; // dated row with no amount — skip
+
+    const firstIdx = rest.search(AMOUNT_1);
+    const note = (firstIdx >= 0 ? rest.slice(0, firstIdx) : rest)
+      .replace(/[|]+/g, " ").replace(/\s+/g, " ").trim();
+
+    // Opening/closing balance markers just seed the running balance.
+    if (/\b(opening balance|closing balance|b\/f|c\/f|brought forward|carried forward)\b/i.test(note)) {
+      prevBalance = nums[nums.length - 1];
+      continue;
+    }
+
+    const drcr = rest.match(/\b(DR|CR)\b/i)?.[1]?.toUpperCase();
+    let amount: number;
+    let type: "income" | "expense";
+
+    if (nums.length >= 2 && prevBalance !== null) {
+      // Last number = running balance → derive direction & amount from the delta.
+      const balance = nums[nums.length - 1];
+      const delta = +(balance - prevBalance).toFixed(2);
+      type = delta >= 0 ? "income" : "expense";
+      amount = Math.abs(delta) || nums[nums.length - 2];
+      prevBalance = balance;
+    } else if (nums.length >= 2) {
+      // Balance column present but no prior balance seeded yet (first row).
+      amount = nums[nums.length - 2];
+      prevBalance = nums[nums.length - 1];
+      type = drcr === "CR" ? "income" : drcr === "DR" ? "expense" : autoCategorize(note).type;
+    } else {
+      // Single amount, no balance column → rely on Dr/Cr marker or keywords.
+      amount = nums[0];
+      type = drcr === "CR" ? "income" : drcr === "DR" ? "expense" : autoCategorize(note).type;
+    }
+
+    if (!(amount > 0)) continue;
+
+    const cat = autoCategorize(note);
+    const category = type === "income"
+      ? (cat.type === "income" ? cat.category : "Other Income 🎁")
+      : cat.category;
+
+    out.push({
+      date: dm.iso,
+      note: note || "Bank transaction",
+      amount,
+      type,
+      category,
+      account_id: accountId,
+      approved: true,
+    });
+  }
+
+  return out;
+}
+
 // ── PDF text extraction ──────────────────────────────────────────────────────
 
 async function extractTextFromPdf(file: File): Promise<string> {
@@ -108,13 +240,32 @@ async function extractTextFromPdf(file: File): Promise<string> {
 
   const ab = await file.arrayBuffer();
   const pdf = await pdfjsLib.getDocument({ data: ab }).promise;
-  const pages: string[] = [];
+  const lines: string[] = [];
   for (let i = 1; i <= Math.min(pdf.numPages, 30); i++) {
     const page = await pdf.getPage(i);
     const content = await page.getTextContent();
-    pages.push(content.items.map((it: any) => it.str).join(" "));
+    // Reconstruct visual table rows from item geometry instead of flattening the
+    // whole page into one blob. Each item's transform is [a,b,c,d,x,y]; group by y
+    // (page top = larger y), then order left→right by x. This keeps each statement
+    // row on its own line — the prerequisite for reliable parsing.
+    const rows: { y: number; items: { x: number; s: string }[] }[] = [];
+    for (const it of content.items as any[]) {
+      const s = (it.str ?? "").trim();
+      if (!s || !it.transform) continue;
+      const x = it.transform[4];
+      const y = it.transform[5];
+      let row = rows.find((r) => Math.abs(r.y - y) <= 2.5); // tolerate line wobble
+      if (!row) { row = { y, items: [] }; rows.push(row); }
+      row.items.push({ x, s });
+    }
+    rows.sort((a, b) => b.y - a.y);
+    for (const r of rows) {
+      r.items.sort((a, b) => a.x - b.x);
+      const line = r.items.map((it) => it.s).join(" ").replace(/\s+/g, " ").trim();
+      if (line) lines.push(line);
+    }
   }
-  return pages.join("\n");
+  return lines.join("\n");
 }
 
 // ── Friendly OpenAI error ────────────────────────────────────────────────────
@@ -154,35 +305,41 @@ export const PdfParser: React.FC<{ onClose: () => void }> = ({ onClose }) => {
 
     setIsProcessing(true);
     setUsedFallback(false);
-    setStatusMsg("Sending to GPT-4o…");
+    setStatusMsg("Parsing statement on your device…");
 
-    let results: ParsedTx[] = [];
+    // 1. Local, API-free parser first — deterministic, offline, private, no limits.
+    let results = parseStatementLocal(text, selectedAccount);
 
-    try {
-      const aiTxs = await parseStatementWithAI(text);
-      if (aiTxs.length > 0) {
-        results = aiTxs.map(r => ({ ...r, account_id: selectedAccount, approved: true }));
-      } else {
-        throw new Error("AI returned 0 transactions");
+    // 2. Safety net: the older idealized single-line formats.
+    if (!results.length) results = parseWithRegex(text, selectedAccount);
+
+    // 3. Only if local parsing finds nothing, optionally try the AI worker.
+    let viaAI = false;
+    if (!results.length) {
+      try {
+        setStatusMsg("Trying AI parser…");
+        const aiTxs = await parseStatementWithAI(text);
+        if (aiTxs.length > 0) {
+          viaAI = true;
+          results = aiTxs.map(r => ({ ...r, account_id: selectedAccount, approved: true }));
+        }
+      } catch (e: any) {
+        // AI is optional and off the critical path — surface but don't block.
+        showToast(openAiErrorMsg(e), "warning");
       }
-    } catch (e: any) {
-      const errMsg = openAiErrorMsg(e);
-      showToast(`${errMsg} — using local parser as fallback.`, "warning");
-      setStatusMsg("Falling back to local parser…");
-      setUsedFallback(true);
-      results = parseWithRegex(text, selectedAccount);
     }
 
+    setUsedFallback(viaAI);
     setIsProcessing(false);
     setStatusMsg("");
 
     if (!results.length) {
-      showToast("Could not find any transactions. Check the text format.", "error");
+      showToast("Could not find any transactions. Try the Paste Text tab with the transaction rows.", "error");
       return;
     }
     setParsedList(results);
     setStep(2);
-    showToast(`Found ${results.length} transactions`, "success");
+    showToast(`Found ${results.length} transactions${viaAI ? " (AI)" : " · parsed locally"}`, "success");
   };
 
   const handlePdfUpload = async (file: File) => {
@@ -237,7 +394,7 @@ export const PdfParser: React.FC<{ onClose: () => void }> = ({ onClose }) => {
           <div className="flex items-start gap-2 p-3 rounded-xl bg-primary/8 border border-primary/20">
             <Bot className="w-4 h-4 text-primary mt-0.5 shrink-0" />
             <p className="text-[11px] text-muted-foreground leading-relaxed">
-              <span className="text-foreground font-semibold">AI-powered parsing</span> — upload a PDF or paste text. Gemini 2.0 Flash reads any Indian bank format automatically. Falls back to local parser if AI is unavailable.
+              <span className="text-foreground font-semibold">On-device parsing</span> — upload a PDF or paste text. Transactions are read locally on your device (offline, private, no limits) for SBI, HDFC, ICICI, IOB & most Indian banks. AI is only tried if local parsing finds nothing.
             </p>
           </div>
 
@@ -275,7 +432,7 @@ export const PdfParser: React.FC<{ onClose: () => void }> = ({ onClose }) => {
                 <>
                   <RefreshCw className="w-8 h-8 text-primary animate-spin" />
                   <p className="text-sm font-semibold text-foreground text-center">{statusMsg}</p>
-                  <p className="text-[11px] text-muted-foreground">May take 10–20 seconds…</p>
+                  <p className="text-[11px] text-muted-foreground">Reading transactions on your device…</p>
                 </>
               ) : pdfFile ? (
                 <>
@@ -314,7 +471,7 @@ export const PdfParser: React.FC<{ onClose: () => void }> = ({ onClose }) => {
                 className="w-full bg-primary hover:bg-primary/90 disabled:opacity-40 disabled:cursor-not-allowed text-primary-foreground font-semibold py-2.5 rounded-xl transition-all text-sm flex items-center justify-center gap-2 cursor-pointer">
                 {isProcessing
                   ? <><RefreshCw className="w-4 h-4 animate-spin" />{statusMsg}</>
-                  : <><Sparkles className="w-4 h-4" />Parse with AI</>}
+                  : <><Sparkles className="w-4 h-4" />Parse Statement</>}
               </button>
             </div>
           )}
@@ -329,7 +486,7 @@ export const PdfParser: React.FC<{ onClose: () => void }> = ({ onClose }) => {
                 <p className="text-[11px] text-muted-foreground">{parsedList.filter(t => t.approved).length} of {parsedList.length} selected</p>
                 {usedFallback && (
                   <span className="flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-md bg-amber-500/10 border border-amber-500/20 text-amber-400 font-medium">
-                    <Zap className="w-2.5 h-2.5" />Local parser
+                    <Zap className="w-2.5 h-2.5" />AI parser
                   </span>
                 )}
               </div>
@@ -347,7 +504,7 @@ export const PdfParser: React.FC<{ onClose: () => void }> = ({ onClose }) => {
             <div className="flex items-start gap-2 p-2.5 rounded-xl bg-amber-500/8 border border-amber-500/20">
               <AlertCircle className="w-3.5 h-3.5 text-amber-400 mt-0.5 shrink-0" />
               <p className="text-[10px] text-amber-300/80 leading-relaxed">
-                AI quota exhausted — parsed using local regex. Add credits at <strong>platform.openai.com/billing</strong> for full AI accuracy.
+                Local parsing found no rows for this layout, so the AI parser was used. Please double-check the amounts and income/expense direction below before importing.
               </p>
             </div>
           )}
