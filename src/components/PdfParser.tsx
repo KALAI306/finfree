@@ -99,10 +99,13 @@ function parseWithRegex(text: string, accountId: string): ParsedTx[] {
 
 // ── Local (API-free) deterministic parser ────────────────────────────────────
 // Parses real Indian bank statement tables entirely in-browser — no network,
-// no LLM, no truncation limits. Uses the "balance-delta" method: when a Balance
-// column is present, the direction (income/expense) and amount are derived from
-// how the running balance changed, so we never have to guess which column is
-// Debit vs Credit.
+// no LLM, no truncation limits. Handles multiple layouts (SBI, IOB, Axis, HDFC,
+// ICICI…) by grouping each transaction's wrapped lines into one date-anchored
+// "block", then deciding income vs expense by priority:
+//   1. Debit/Credit column with a "-" placeholder  (order-independent)
+//   2. explicit DR/CR marker
+//   3. running-balance delta (needs chronological rows)
+//   4. keyword fallback
 
 const MONTHS: Record<string, number> = {
   jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6,
@@ -110,9 +113,15 @@ const MONTHS: Record<string, number> = {
 };
 const pad2 = (n: number) => String(n).padStart(2, "0");
 
-const AMOUNT_G = /\d[\d,]*\.\d{2}/g; // all amounts on a line (match-all)
-const AMOUNT_1 = /\d[\d,]*\.\d{2}/;  // presence test / index search
+const AMOUNT_G = /\d[\d,]*\.\d{2}/g;                                  // all amounts (match-all)
+const AMOUNT_1 = /\d[\d,]*\.\d{2}/;                                   // presence test
+// Debit | Credit | Balance triple, where the empty money column shows as "-".
+const COLS_G = /(-|\d[\d,]*\.\d{2})\s+(-|\d[\d,]*\.\d{2})\s+(\d[\d,]*\.\d{2})/g;
 const toNum = (s: string) => +s.replace(/,/g, "");
+
+// End-of-statement markers (halt collecting) and pure-noise lines (drop).
+const STOP = /\b(transaction total|closing balance|effective available|computer generated|does not require|constituent notifies|statement summary|registered office|branch address)\b/i;
+const SKIP = /^(balance|wdl tfr|dep tfr|withdrawal|deposit|page no\.?.*|page \d+ of.*)$/i;
 
 // Match a date at the START of a line; return ISO date + remaining text, or null.
 function matchLeadingDate(line: string): { iso: string; rest: string } | null {
@@ -144,86 +153,96 @@ function matchLeadingDate(line: string): { iso: string; rest: string } | null {
   return null;
 }
 
+// Strip amounts, columns, ref/branch codes and boilerplate to a readable note.
+function cleanNote(text: string): string {
+  return text
+    .replace(COLS_G, " ").replace(AMOUNT_G, " ")
+    .replace(/\bAT \d{3,} .*/i, " ")             // "AT 07589 ACB CHITTAR…" branch tail
+    .replace(/\bS\d{6,}\b/g, " ").replace(/\b\d{6,}\b/g, " ")
+    .replace(/\bTransfer\b|\bWDL\b|\bTFR\b|\bDEP\b|\bDR\b|\bCR\b/gi, " ")
+    .replace(/\(\s*\)/g, " ").replace(/[|]+/g, " ").replace(/\s[-\/]\s/g, " ")
+    .replace(/\s+/g, " ").trim().slice(0, 80);
+}
+
 function parseStatementLocal(text: string, accountId: string): ParsedTx[] {
-  const out: ParsedTx[] = [];
+  const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
+
+  // Seed the opening balance if present anywhere (it may be 0 / ".00" and off a date row).
   let prevBalance: number | null = null;
+  for (const line of lines) {
+    if (/\bopening balance\b/i.test(line)) {
+      const nn = line.match(AMOUNT_G)?.map(toNum);
+      prevBalance = nn && nn.length ? nn[0] : 0;
+      break;
+    }
+  }
 
-  for (const raw of text.split("\n")) {
-    const line = raw.trim();
-    if (!line) continue;
-
-    // Skip header rows ("Date … Description … Debit Credit Balance") with no amounts.
+  // Group wrapped lines into date-anchored blocks.
+  const blocks: { iso: string; text: string }[] = [];
+  for (const line of lines) {
+    if (STOP.test(line)) { if (blocks.length) break; else continue; }
+    if (SKIP.test(line)) continue;
+    // Column-header row ("Date … Debit Credit Balance") with no amounts.
     if (/\bdate\b/i.test(line)
-      && /\b(balance|debit|credit|withdrawal|deposit|description|particulars|narration)\b/i.test(line)
+      && /\b(balance|debit|credit|withdrawal|deposit|particulars|narration|description)\b/i.test(line)
       && !AMOUNT_1.test(line)) continue;
 
     const dm = matchLeadingDate(line);
+    if (dm) {
+      let rest = dm.rest.trim();
+      const vd = matchLeadingDate(rest); // drop a second (value) date
+      if (vd) rest = vd.rest.trim();
+      blocks.push({ iso: dm.iso, text: rest });
+    } else if (blocks.length) {
+      blocks[blocks.length - 1].text += " " + line; // wrapped continuation
+    }
+  }
 
-    // No leading date → treat as a wrapped description line: append to previous txn.
-    if (!dm) {
-      if (out.length && !AMOUNT_1.test(line)) {
-        const prev = out[out.length - 1];
-        prev.note = (prev.note + " " + line).replace(/\s+/g, " ").trim().slice(0, 80);
-      }
-      continue;
+  const out: ParsedTx[] = [];
+  for (const b of blocks) {
+    const blockText = b.text.replace(/\s+/g, " ").trim();
+    const nums = blockText.match(AMOUNT_G)?.map(toNum) ?? [];
+    if (!nums.length) continue;
+    const balance = nums[nums.length - 1];
+
+    // Last Debit|Credit|Balance triple on the row (dash = the empty column).
+    let colMatch: RegExpExecArray | null = null, m: RegExpExecArray | null;
+    COLS_G.lastIndex = 0;
+    while ((m = COLS_G.exec(blockText)) !== null) colMatch = m;
+    const colDash = !!colMatch && ((colMatch[1] === "-") !== (colMatch[2] === "-"));
+
+    const drcr = blockText.match(/\b(DR|CR)\b/i)?.[1]?.toUpperCase();
+
+    let type: "income" | "expense" | null = null;
+    let colAmount: number | null = null;
+    if (colDash && colMatch) {
+      if (colMatch[2] === "-") { type = "expense"; colAmount = toNum(colMatch[1]); }
+      else { type = "income"; colAmount = toNum(colMatch[2]); }
+    } else if (drcr) {
+      type = drcr === "CR" ? "income" : "expense";
     }
 
-    let rest = dm.rest.trim();
-    // Some banks show two dates (Txn + Value date) — drop the second.
-    const vd = matchLeadingDate(rest);
-    if (vd) rest = vd.rest.trim();
-
-    const nums = rest.match(AMOUNT_G)?.map(toNum) ?? [];
-    if (!nums.length) continue; // dated row with no amount — skip
-
-    const firstIdx = rest.search(AMOUNT_1);
-    const note = (firstIdx >= 0 ? rest.slice(0, firstIdx) : rest)
-      .replace(/[|]+/g, " ").replace(/\s+/g, " ").trim();
-
-    // Opening/closing balance markers just seed the running balance.
-    if (/\b(opening balance|closing balance|b\/f|c\/f|brought forward|carried forward)\b/i.test(note)) {
-      prevBalance = nums[nums.length - 1];
-      continue;
-    }
-
-    const drcr = rest.match(/\b(DR|CR)\b/i)?.[1]?.toUpperCase();
     let amount: number;
-    let type: "income" | "expense";
-
-    if (nums.length >= 2 && prevBalance !== null) {
-      // Last number = running balance → derive direction & amount from the delta.
-      const balance = nums[nums.length - 1];
+    if (colAmount != null) {
+      amount = colAmount;
+    } else if (prevBalance !== null && nums.length >= 2) {
       const delta = +(balance - prevBalance).toFixed(2);
-      type = delta >= 0 ? "income" : "expense";
+      if (type === null) type = delta >= 0 ? "income" : "expense";
       amount = Math.abs(delta) || nums[nums.length - 2];
-      prevBalance = balance;
-    } else if (nums.length >= 2) {
-      // Balance column present but no prior balance seeded yet (first row).
-      amount = nums[nums.length - 2];
-      prevBalance = nums[nums.length - 1];
-      type = drcr === "CR" ? "income" : drcr === "DR" ? "expense" : autoCategorize(note).type;
     } else {
-      // Single amount, no balance column → rely on Dr/Cr marker or keywords.
-      amount = nums[0];
-      type = drcr === "CR" ? "income" : drcr === "DR" ? "expense" : autoCategorize(note).type;
+      amount = nums.length >= 2 ? nums[nums.length - 2] : nums[0];
+      if (type === null) type = autoCategorize(blockText).type;
     }
-
+    prevBalance = balance;
     if (!(amount > 0)) continue;
 
+    const note = cleanNote(blockText) || "Bank transaction";
     const cat = autoCategorize(note);
     const category = type === "income"
       ? (cat.type === "income" ? cat.category : "Other Income 🎁")
       : cat.category;
 
-    out.push({
-      date: dm.iso,
-      note: note || "Bank transaction",
-      amount,
-      type,
-      category,
-      account_id: accountId,
-      approved: true,
-    });
+    out.push({ date: b.iso, note, amount, type, category, account_id: accountId, approved: true });
   }
 
   return out;
