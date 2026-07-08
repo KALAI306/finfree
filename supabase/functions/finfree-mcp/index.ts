@@ -242,16 +242,16 @@ const TOOLS = [
         current_value:   { type: 'number', description: 'Current market value' },
         quantity:        { type: 'number', description: 'Number of units/shares (optional)' },
         return_percent:  { type: 'number', description: 'Return percentage, auto-calculated if omitted' },
-        tracking_mode:   { type: 'string', enum: ['manual', 'live'], description: '"manual" = you update the value yourself; "live" = current_value is auto-updated from live market prices using symbol. Default is "manual".' },
-        symbol:          { type: 'string', description: 'Ticker/exchange symbol used for live price lookups (e.g. "RELIANCE.NS", "NIFTY50", "BTC-USD"). Required when tracking_mode is "live".' },
-        buy_price:       { type: 'number', description: 'Average buy price per unit in the asset\'s native currency (e.g. USD for US stocks, INR for Indian stocks). Used with quantity to calculate invested_amount. For foreign assets the app converts to INR automatically.' },
+        tracking_mode:   { type: 'string', enum: ['manual', 'linked'], description: '"manual" = you update current_value yourself; "linked" = current_value auto-updated from live market data each time Investments page opens. Default is "manual". When "linked", symbol is required (except gold/silver which auto-use GC=F / SI=F).' },
+        symbol:          { type: 'string', description: 'Live price source. Indian stocks → "RELIANCE.NS"; US stocks → "AAPL"; Mutual funds → "MF:101206" (MF: prefix + AMFI scheme code from mfapi.in); Gold → "GC=F" (auto-set if type=gold); Silver → "SI=F" (auto-set if type=silver). Required when tracking_mode is "linked" for non-commodity types.' },
+        buy_price:       { type: 'number', description: 'Average buy price per unit. ₹/share for Indian stocks; USD/share for US stocks; ₹/NAV-unit for mutual funds; ₹/gram for gold and silver. Used with quantity to compute invested_amount.' },
         purchase_date:   { type: 'string', description: 'Date the investment was purchased, YYYY-MM-DD. Used to calculate CAGR accurately. If omitted, the record creation date is used as a fallback (which will show 0% CAGR for new records).' },
       },
     },
   },
   {
     name: 'update_investment',
-    description: 'Update an existing investment by ID. Only provided fields are changed. Return % is auto-calculated when both invested_amount and current_value are updated. To switch to live price tracking, set tracking_mode="live" AND provide a symbol.',
+    description: 'Update an existing investment by ID. Only provided fields are changed. Return % is auto-calculated when both invested_amount and current_value are updated. To switch to live price tracking set tracking_mode="linked" and provide a symbol (see symbol field for format). For gold/silver the symbol is auto-set — just set tracking_mode="linked" and supply quantity (grams) and buy_price (₹/gram).',
     inputSchema: {
       type: 'object',
       required: ['id'],
@@ -259,13 +259,13 @@ const TOOLS = [
         id:              { type: 'string', description: 'Investment UUID from list_investments' },
         name:            { type: 'string', description: 'New investment name' },
         type:            { type: 'string', enum: [...INVESTMENT_TYPES], description: `New type, lowercase. One of: ${INVESTMENT_TYPES.join(', ')}` },
-        invested_amount: { type: 'number', description: 'New cost basis / total amount invested' },
-        current_value:   { type: 'number', description: 'New current market value' },
-        quantity:        { type: 'number', description: 'New quantity/units' },
+        invested_amount: { type: 'number', description: 'New cost basis / total amount invested in ₹' },
+        current_value:   { type: 'number', description: 'New current market value in ₹' },
+        quantity:        { type: 'number', description: 'Units held (shares for stocks, NAV units for mutual funds, grams for gold/silver)' },
         return_percent:  { type: 'number', description: 'Explicit return %, or omit to auto-calculate when both invested_amount and current_value are provided' },
-        tracking_mode:   { type: 'string', enum: ['manual', 'live'], description: '"manual" = you update current_value yourself; "live" = current_value is auto-updated from live market data via symbol. When setting to "live", symbol is required.' },
-        symbol:          { type: 'string', description: 'Ticker/exchange symbol for live price lookups (e.g. "RELIANCE.NS", "HDFCBANK.BO", "BTC-USD"). Required when tracking_mode is "live". Ignored when tracking_mode is "manual".' },
-        buy_price:       { type: 'number', description: 'Average buy price per unit in the asset\'s native currency (e.g. USD for US stocks, INR for Indian stocks). The app converts to INR for dashboard display.' },
+        tracking_mode:   { type: 'string', enum: ['manual', 'linked'], description: '"manual" = user updates current_value manually; "linked" = current_value auto-updated from live market data each time the Investments page opens. When setting to "linked", symbol is required (except for gold/silver which auto-use GC=F / SI=F).' },
+        symbol:          { type: 'string', description: 'Live price source. Format by asset type: Indian stocks → "RELIANCE.NS" / "HDFCBANK.BO"; US stocks → "AAPL" / "AMD"; Indian ETFs → "NIFTYBEES.NS"; Mutual funds → "MF:101206" (MF: prefix + AMFI scheme code from mfapi.in); Gold → "GC=F" (auto-set if type=gold); Silver → "SI=F" (auto-set if type=silver). Not needed for manual mode.' },
+        buy_price:       { type: 'number', description: 'Average buy price per unit. Unit depends on asset type: ₹/share for Indian stocks; USD/share for US stocks; ₹/NAV-unit for mutual funds; ₹/gram for gold and silver. The app uses this with quantity to compute invested_amount and track return %.' },
         purchase_date:   { type: 'string', description: 'Original purchase date YYYY-MM-DD. Corrects CAGR calculation — if the investment was bought before it was added to the app, set this to the actual purchase date.' },
       },
     },
@@ -681,8 +681,13 @@ async function handleTool(name: string, args: Record<string, unknown>, userId: s
     }
 
     case 'add_investment': {
-      if (args.tracking_mode === 'live' && !args.symbol) {
-        throw new Error("symbol is required when tracking_mode is 'live'. Provide the ticker/exchange symbol (e.g. 'RELIANCE.NS', 'BTC-USD').");
+      if (args.tracking_mode === 'linked') {
+        if (!args.symbol) {
+          const t = args.type as string | undefined;
+          if (t === 'gold')        args = { ...args, symbol: 'GC=F' };
+          else if (t === 'silver') args = { ...args, symbol: 'SI=F' };
+          else throw new Error("symbol is required when tracking_mode is 'linked'. For stocks use e.g. 'RELIANCE.NS'; for mutual funds use 'MF:<amfi_code>'; gold/silver are auto-assigned.");
+        }
       }
       const rp = args.return_percent ?? (args.invested_amount && args.current_value ? Number(((Number(args.current_value) - Number(args.invested_amount)) / Number(args.invested_amount) * 100).toFixed(2)) : 0);
       const { data, error } = await supabase.from('investments').insert([{
@@ -703,12 +708,25 @@ async function handleTool(name: string, args: Record<string, unknown>, userId: s
     }
 
     case 'update_investment': {
-      // Validate: live tracking requires a symbol
-      if (args.tracking_mode === 'live' && !args.symbol) {
-        // Check if the investment already has a symbol stored
-        const { data: existing } = await supabase.from('investments').select('symbol').eq('id', args.id as string).eq('user_id', userId).single();
-        if (!existing?.symbol) {
-          throw new Error("symbol is required when setting tracking_mode to 'live'. Provide the ticker/exchange symbol (e.g. 'RELIANCE.NS', 'HDFCBANK.BO', 'BTC-USD').");
+      // For linked mode, resolve the symbol (auto-assign for gold/silver, validate for others)
+      if (args.tracking_mode === 'linked') {
+        if (!args.symbol) {
+          // Determine the effective type (from args or existing record)
+          let effectiveType = args.type as string | undefined;
+          if (!effectiveType) {
+            const { data: existing } = await supabase.from('investments').select('type, symbol').eq('id', args.id as string).eq('user_id', userId).single();
+            effectiveType = existing?.type;
+            // If already has a symbol and we're not changing it, that's fine too
+            if (!args.symbol && existing?.symbol) args = { ...args, symbol: existing.symbol };
+          }
+          // Auto-assign commodity symbols
+          if (effectiveType === 'gold')   args = { ...args, symbol: 'GC=F' };
+          else if (effectiveType === 'silver') args = { ...args, symbol: 'SI=F' };
+          else if (!args.symbol) {
+            // Non-commodity: still need a symbol — check existing
+            const { data: existing } = await supabase.from('investments').select('symbol').eq('id', args.id as string).eq('user_id', userId).single();
+            if (!existing?.symbol) throw new Error("symbol is required when setting tracking_mode to 'linked'. For stocks use e.g. 'RELIANCE.NS'; for mutual funds use 'MF:<amfi_code>'; gold/silver are auto-assigned.");
+          }
         }
       }
       const updates: Record<string, unknown> = {};
