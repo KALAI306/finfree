@@ -146,41 +146,26 @@ export const FreedomCalculator: React.FC = () => {
     salaryGrowth
   );
 
-  // Scenario calculations
-  // 1. SIP + 500
+  // ── Interactive scenario sliders ────────────────────────────────────────────
+  const [scenarioSipBoost,    setScenarioSipBoost]    = useState(500);
+  const [scenarioSalaryTarget, setScenarioSalaryTarget] = useState(40000);
+  const [scenarioExpenseCut,  setScenarioExpenseCut]  = useState(2000);
+
   const scenarioSIP = solveFreedomAge(
-    currentAge,
-    positiveNetWorth,
-    monthlySalary,
-    monthlyExpenses,
-    monthlySIP + 500,
-    expectedReturn,
-    salaryGrowth
+    currentAge, positiveNetWorth, monthlySalary, monthlyExpenses,
+    monthlySIP + scenarioSipBoost, expectedReturn, salaryGrowth
   ).age;
 
-  // 2. Salary ₹40k by age 27 (meaning at age 27, salary becomes 40k and we add 50% of difference to SIP)
-  // Let's approximate this scenario by running solver with higher baseline salary and SIP
-  // If Kalai gets ₹40k salary, that is ₹20k increase. 50% = ₹10k added to SIP!
-  // Let's simulate:
+  const scenarioSipSavings = Math.max(0, scenarioSalaryTarget - monthlySalary);
   const scenarioSalary = solveFreedomAge(
-    currentAge,
-    positiveNetWorth,
-    40000,
-    monthlyExpenses,
-    monthlySIP + 5000,
-    expectedReturn,
-    salaryGrowth
+    currentAge, positiveNetWorth, scenarioSalaryTarget, monthlyExpenses,
+    monthlySIP + Math.round(scenarioSipSavings * 0.5), expectedReturn, salaryGrowth
   ).age;
 
-  // 3. Cut expenses by ₹2000
   const scenarioExpenses = solveFreedomAge(
-    currentAge,
-    positiveNetWorth,
-    monthlySalary,
-    Math.max(1000, monthlyExpenses - 2000),
-    monthlySIP,
-    expectedReturn,
-    salaryGrowth
+    currentAge, positiveNetWorth, monthlySalary,
+    Math.max(1000, monthlyExpenses - scenarioExpenseCut),
+    monthlySIP, expectedReturn, salaryGrowth
   ).age;
 
   const targetFreedomCorpus = monthlyExpenses * 12 * 25;
@@ -468,47 +453,79 @@ export const FreedomCalculator: React.FC = () => {
         </h4>
         
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          {/* Scenario 1 */}
-          <div className="glass-card rounded-2xl p-5 border border-border space-y-3 relative overflow-hidden">
-            <span className="text-[10px] text-gold-400 dark:text-gold-400 uppercase tracking-widest font-black block">Micro Savings Increase</span>
-            <h5 className="text-sm font-bold text-foreground m-0">If SIP is increased by +₹500</h5>
-            <p className="text-xs text-muted-foreground leading-relaxed m-0">
-              Investing an extra ₹500/month pushes compound interest gains further.
-            </p>
+          {/* Scenario 1 — SIP boost */}
+          <div className="glass-card rounded-2xl p-5 border border-border space-y-3">
+            <span className="text-[10px] text-gold-400 uppercase tracking-widest font-black block">Micro Savings Increase</span>
+            <h5 className="text-sm font-bold text-foreground m-0">Boost SIP by +₹{scenarioSipBoost.toLocaleString('en-IN')}/mo</h5>
+            <div className="space-y-1">
+              <div className="flex justify-between text-[10px] text-muted-foreground">
+                <span>Extra SIP</span>
+                <span className="font-semibold text-foreground">₹{scenarioSipBoost.toLocaleString('en-IN')}</span>
+              </div>
+              <input type="range" min={500} max={10000} step={500} value={scenarioSipBoost}
+                onChange={e => setScenarioSipBoost(Number(e.target.value))}
+                className="w-full accent-gold-500 bg-muted rounded-lg appearance-none h-1.5 cursor-pointer" />
+              <div className="flex justify-between text-[9px] text-muted-foreground/70"><span>₹500</span><span>₹10K</span></div>
+            </div>
             <div className="pt-2 flex items-center justify-between border-t border-border text-xs">
               <span className="text-muted-foreground/80">Freedom Age</span>
               <span className="font-bold text-emerald-500 flex items-center gap-1">
                 Age {result.age} <ArrowRight className="w-3 h-3 text-muted-foreground" /> Age {scenarioSIP === 99 ? "∞" : scenarioSIP}
+                {result.age !== 99 && scenarioSIP !== 99 && result.age - scenarioSIP > 0 && (
+                  <span className="text-emerald-400 text-[10px] ml-1">(-{result.age - scenarioSIP}yr)</span>
+                )}
               </span>
             </div>
           </div>
 
-          {/* Scenario 2 */}
-          <div className="glass-card rounded-2xl p-5 border border-border space-y-3 relative overflow-hidden">
-            <span className="text-[10px] text-gold-400 dark:text-gold-400 uppercase tracking-widest font-black block">Career Advancement</span>
-            <h5 className="text-sm font-bold text-foreground m-0">If salary climbs to ₹40K by 27</h5>
-            <p className="text-xs text-muted-foreground leading-relaxed m-0">
-              Assumes saving 50% of the raise as SIP (total SIP grows to ₹{formatIndianNumberOnly(monthlySIP + 5000)}).
-            </p>
+          {/* Scenario 2 — Salary target */}
+          <div className="glass-card rounded-2xl p-5 border border-border space-y-3">
+            <span className="text-[10px] text-gold-400 uppercase tracking-widest font-black block">Career Advancement</span>
+            <h5 className="text-sm font-bold text-foreground m-0">If salary reaches ₹{scenarioSalaryTarget.toLocaleString('en-IN')}</h5>
+            <div className="space-y-1">
+              <div className="flex justify-between text-[10px] text-muted-foreground">
+                <span>Target salary</span>
+                <span className="font-semibold text-foreground">₹{scenarioSalaryTarget.toLocaleString('en-IN')}</span>
+              </div>
+              <input type="range" min={Math.max(monthlySalary, 20000)} max={200000} step={5000} value={scenarioSalaryTarget}
+                onChange={e => setScenarioSalaryTarget(Number(e.target.value))}
+                className="w-full accent-gold-500 bg-muted rounded-lg appearance-none h-1.5 cursor-pointer" />
+              <div className="flex justify-between text-[9px] text-muted-foreground/70"><span>₹20K</span><span>₹2L</span></div>
+            </div>
+            <p className="text-[10px] text-muted-foreground m-0">Saves 50% of raise as extra SIP (+₹{Math.round(scenarioSipSavings * 0.5).toLocaleString('en-IN')}/mo)</p>
             <div className="pt-2 flex items-center justify-between border-t border-border text-xs">
               <span className="text-muted-foreground/80">Freedom Age</span>
               <span className="font-bold text-emerald-500 flex items-center gap-1">
                 Age {result.age} <ArrowRight className="w-3 h-3 text-muted-foreground" /> Age {scenarioSalary === 99 ? "∞" : scenarioSalary}
+                {result.age !== 99 && scenarioSalary !== 99 && result.age - scenarioSalary > 0 && (
+                  <span className="text-emerald-400 text-[10px] ml-1">(-{result.age - scenarioSalary}yr)</span>
+                )}
               </span>
             </div>
           </div>
 
-          {/* Scenario 3 */}
-          <div className="glass-card rounded-2xl p-5 border border-border space-y-3 relative overflow-hidden">
-            <span className="text-[10px] text-gold-400 dark:text-gold-400 uppercase tracking-widest font-black block">Frugal Adjustments</span>
-            <h5 className="text-sm font-bold text-foreground m-0">If expenses are cut by -₹2K</h5>
-            <p className="text-xs text-muted-foreground leading-relaxed m-0">
-              Lowers expenses to ₹{formatIndianNumberOnly(Math.max(1000, monthlyExpenses - 2000))} which also reduces your 25x target.
-            </p>
+          {/* Scenario 3 — Expense cut */}
+          <div className="glass-card rounded-2xl p-5 border border-border space-y-3">
+            <span className="text-[10px] text-gold-400 uppercase tracking-widest font-black block">Frugal Adjustments</span>
+            <h5 className="text-sm font-bold text-foreground m-0">Cut expenses by ₹{scenarioExpenseCut.toLocaleString('en-IN')}/mo</h5>
+            <div className="space-y-1">
+              <div className="flex justify-between text-[10px] text-muted-foreground">
+                <span>Expense cut</span>
+                <span className="font-semibold text-foreground">₹{scenarioExpenseCut.toLocaleString('en-IN')}</span>
+              </div>
+              <input type="range" min={500} max={15000} step={500} value={scenarioExpenseCut}
+                onChange={e => setScenarioExpenseCut(Number(e.target.value))}
+                className="w-full accent-gold-500 bg-muted rounded-lg appearance-none h-1.5 cursor-pointer" />
+              <div className="flex justify-between text-[9px] text-muted-foreground/70"><span>₹500</span><span>₹15K</span></div>
+            </div>
+            <p className="text-[10px] text-muted-foreground m-0">New expenses: ₹{Math.max(1000, monthlyExpenses - scenarioExpenseCut).toLocaleString('en-IN')} · also lowers 25× target</p>
             <div className="pt-2 flex items-center justify-between border-t border-border text-xs">
               <span className="text-muted-foreground/80">Freedom Age</span>
               <span className="font-bold text-emerald-500 flex items-center gap-1">
                 Age {result.age} <ArrowRight className="w-3 h-3 text-muted-foreground" /> Age {scenarioExpenses === 99 ? "∞" : scenarioExpenses}
+                {result.age !== 99 && scenarioExpenses !== 99 && result.age - scenarioExpenses > 0 && (
+                  <span className="text-emerald-400 text-[10px] ml-1">(-{result.age - scenarioExpenses}yr)</span>
+                )}
               </span>
             </div>
           </div>

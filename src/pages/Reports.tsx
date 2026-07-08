@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { useApp } from "../context/AppContext";
 import { formatIndianCurrency, formatIndianNumberOnly } from "../lib/utils";
+import { chatWithAI, buildContextStr } from "../lib/openai";
 import {
   BarChart,
   Bar,
@@ -24,6 +25,10 @@ import {
   TrendingUp,
   TrendingDown,
   PiggyBank,
+  Sparkles,
+  Copy,
+  Check,
+  Loader2,
 } from "lucide-react";
 
 const CHART_COLORS: Record<string, string> = {
@@ -121,8 +126,13 @@ const CategoryTooltip = ({ active, payload, label }: any) => {
 };
 
 export const Reports: React.FC = () => {
-  const { transactions, accounts, investments, profile, themeColor, fmt: formatIndianCurrency } = useApp();
+  const { transactions, accounts, investments, emis, goals, profile, themeColor, budgetLimits, user, fmt: formatIndianCurrency } = useApp();
   const accentColor = CHART_COLORS[themeColor] || CHART_COLORS.gold;
+
+  const [aiInsight, setAiInsight]       = useState<string | null>(null);
+  const [aiLoading, setAiLoading]       = useState(false);
+  const [aiError, setAiError]           = useState<string | null>(null);
+  const [copied, setCopied]             = useState(false);
 
   const [selectedMonthStr, setSelectedMonthStr] = useState<string>(() => {
     const d = new Date();
@@ -381,6 +391,67 @@ export const Reports: React.FC = () => {
               </AreaChart>
             </ResponsiveContainer>
           </div>
+        </div>
+
+        {/* Monthly Health Report */}
+        <div className="aurora-card p-6 space-y-4">
+          <div className="flex items-center justify-between">
+            <h4 className="text-sm font-bold text-foreground m-0 flex items-center gap-2">
+              <Sparkles className="w-4 h-4 text-primary" /> Monthly Health Report
+            </h4>
+            {aiInsight && (
+              <button
+                onClick={() => { navigator.clipboard.writeText(aiInsight); setCopied(true); setTimeout(() => setCopied(false), 2000); }}
+                className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-white/[0.06] transition-colors cursor-pointer"
+                title="Copy"
+              >
+                {copied ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
+              </button>
+            )}
+          </div>
+
+          {!aiInsight && !aiLoading && (
+            <div className="text-center py-6 space-y-3">
+              <p className="text-xs text-muted-foreground">
+                Get an AI-generated summary of your financial health for {new Date(selectedYear, selectedMonth).toLocaleString('en-IN', { month: 'long', year: 'numeric' })}.
+              </p>
+              <button
+                onClick={async () => {
+                  setAiLoading(true); setAiError(null);
+                  try {
+                    const ctx = buildContextStr(profile, accounts, transactions, investments, emis, goals, budgetLimits);
+                    const monthName = new Date(selectedYear, selectedMonth).toLocaleString('en-IN', { month: 'long', year: 'numeric' });
+                    const prompt = `Generate a concise monthly financial health report for ${monthName}. Income: ₹${Math.round(monthlyIncome).toLocaleString('en-IN')}, Expenses: ₹${Math.round(monthlyExpense).toLocaleString('en-IN')}, Net saved: ₹${Math.round(netSaved).toLocaleString('en-IN')}. Top spending categories: ${categoryData.slice(0,3).map(c=>`${c.category} ₹${c.amount.toLocaleString('en-IN')}`).join(', ')}. Give 3-4 bullet insights about spending patterns, savings rate, and one actionable tip. Keep it under 120 words.`;
+                    const reply = await chatWithAI(prompt, user?.id || 'guest', ctx, async () => '');
+                    setAiInsight(reply);
+                  } catch (e: any) {
+                    setAiError(e.message || 'AI unavailable');
+                  } finally {
+                    setAiLoading(false);
+                  }
+                }}
+                className="btn-primary flex items-center gap-2 mx-auto px-4 py-2 text-sm cursor-pointer"
+              >
+                <Sparkles className="w-4 h-4" /> Generate Report
+              </button>
+              {aiError && <p className="text-xs text-rose-400">{aiError}</p>}
+            </div>
+          )}
+
+          {aiLoading && (
+            <div className="flex items-center justify-center py-8 gap-2 text-muted-foreground text-sm">
+              <Loader2 className="w-4 h-4 animate-spin" /> Generating insights…
+            </div>
+          )}
+
+          {aiInsight && (
+            <div className="space-y-3">
+              <p className="text-xs text-foreground leading-relaxed whitespace-pre-wrap">{aiInsight}</p>
+              <button onClick={() => { setAiInsight(null); setAiError(null); }} className="text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer">
+                Regenerate
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Biggest Single Outflows */}

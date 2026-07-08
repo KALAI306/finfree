@@ -1,8 +1,9 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { Link } from "react-router-dom";
 import { useApp } from "../context/AppContext";
 import { formatIndianNumberOnly } from "../lib/utils";
 import { getDailyQuote } from "../lib/quotes";
+import { detectAnomalies } from "../lib/anomalies";
 import {
   Plus,
   ArrowUpRight,
@@ -25,6 +26,8 @@ import {
   RefreshCw,
   PiggyBank,
   CheckCircle2,
+  X,
+  ShieldAlert,
 } from "lucide-react";
 import { Modal } from "../components/Modal";
 import { TransactionForm } from "./Transactions.tsx";
@@ -284,6 +287,16 @@ export const Dashboard: React.FC = () => {
     await refreshData();
     setRefreshing(false);
   };
+
+  const [dismissedAnomalies, setDismissedAnomalies] = useState<string[]>(() => {
+    try { return JSON.parse(localStorage.getItem('ff_dismissed_anomalies') || '[]'); } catch { return []; }
+  });
+  const dismissAnomaly = (key: string) => {
+    const next = [...dismissedAnomalies, key];
+    setDismissedAnomalies(next);
+    localStorage.setItem('ff_dismissed_anomalies', JSON.stringify(next));
+  };
+  const anomalies = useMemo(() => detectAnomalies(transactions).filter(a => !dismissedAnomalies.includes(a.dismissKey)), [transactions, dismissedAnomalies]);
 
   return (
     <div className="space-y-6 py-1">
@@ -658,6 +671,29 @@ export const Dashboard: React.FC = () => {
           </div>
         );
       })()}
+
+      {/* ── Anomaly Alerts ── */}
+      {anomalies.length > 0 && (
+        <div className="aurora-card p-5 space-y-3 animate-fade-in-up border-amber-500/20">
+          <div className="flex items-center gap-2 mb-1">
+            <div className="icon-box icon-box-warning w-8 h-8"><ShieldAlert className="w-4 h-4" /></div>
+            <span className="label-xs">Smart Alerts</span>
+            <span className="ml-auto text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-400">{anomalies.length} detected</span>
+          </div>
+          {anomalies.map(a => (
+            <div key={a.id} className={`flex items-start gap-3 p-3 rounded-xl border text-xs ${a.severity === 'warning' ? 'border-rose-500/20 bg-rose-500/5' : 'border-amber-500/20 bg-amber-500/5'}`}>
+              <AlertTriangle className={`w-4 h-4 shrink-0 mt-0.5 ${a.severity === 'warning' ? 'text-rose-400' : 'text-amber-400'}`} />
+              <div className="flex-1 min-w-0">
+                <p className="font-semibold text-foreground m-0">{a.title}</p>
+                <p className="text-muted-foreground m-0 mt-0.5 leading-relaxed">{a.description}</p>
+              </div>
+              <button onClick={() => dismissAnomaly(a.dismissKey)} className="shrink-0 p-1 rounded-lg text-muted-foreground hover:text-foreground hover:bg-white/10 transition-colors cursor-pointer" aria-label="Dismiss">
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* ── Savings Rate + Accounts Row ── */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 animate-fade-in-up stagger-4">
