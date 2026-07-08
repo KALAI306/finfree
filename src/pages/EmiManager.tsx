@@ -24,6 +24,182 @@ import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from "recha
 import type { EMI } from "../lib/db";
 import { CustomSelect, NumberInput } from "../components/CustomSelect";
 
+// ── Snowball vs Avalanche Simulation ─────────────────────────────────────────
+
+interface SimLoan {
+  id: string;
+  name: string;
+  balance: number;
+  rate: number;   // monthly fraction
+  minPayment: number;
+}
+
+interface SimResult {
+  totalMonths: number;
+  totalInterest: number;
+  payoffOrder: { name: string; month: number }[];
+  monthlySchedule: { month: number; totalBalance: number }[];
+}
+
+function runSimulation(loans: SimLoan[], extraPayment: number, strategy: "snowball" | "avalanche"): SimResult {
+  // Deep-clone balances
+  let active = loans.map(l => ({ ...l }));
+  let month = 0;
+  let totalInterest = 0;
+  const payoffOrder: { name: string; month: number }[] = [];
+  const monthlySchedule: { month: number; totalBalance: number }[] = [];
+  let freed = 0; // extra freed up from paid-off loans gets added back
+
+  while (active.length > 0 && month < 600) {
+    month++;
+    // Pick target loan
+    const sorted = [...active].sort((a, b) =>
+      strategy === "snowball" ? a.balance - b.balance : b.rate - a.rate,
+    );
+    const targetId = sorted[0].id;
+
+    let remainingExtra = extraPayment + freed;
+    freed = 0;
+
+    active = active.map(loan => {
+      const interest = loan.balance * loan.rate;
+      totalInterest += interest;
+      const payment = loan.minPayment + (loan.id === targetId ? remainingExtra : 0);
+      const principal = Math.min(loan.balance, Math.max(0, payment - interest));
+      return { ...loan, balance: Math.max(0, loan.balance - principal) };
+    });
+
+    // Remove paid-off loans and free their min payment
+    const stillActive: SimLoan[] = [];
+    for (const loan of active) {
+      if (loan.balance < 0.5) {
+        payoffOrder.push({ name: loan.name, month });
+        freed += loan.minPayment;
+      } else {
+        stillActive.push(loan);
+      }
+    }
+    active = stillActive;
+
+    const totalBal = active.reduce((s, l) => s + l.balance, 0);
+    if (month <= 120) monthlySchedule.push({ month, totalBalance: totalBal });
+  }
+
+  return { totalMonths: month, totalInterest, payoffOrder, monthlySchedule };
+}
+
+const SnowballAvalanchePlanner: React.FC<{
+  emis: any[];
+  extraPayment: number;
+  fmt: (n: number) => string;
+}> = ({ emis, extraPayment, fmt }) => {
+  const loans: SimLoan[] = emis.map(emi => {
+    const P = Number(emi.principal);
+    const rate = Number(emi.interest_rate) / 100 / 12;
+    const PMT = Number(emi.emi_amount);
+    const paid = Number(emi.paid_months);
+    let balance = P;
+    if (rate > 0) {
+      balance = P * Math.pow(1 + rate, paid) - PMT * ((Math.pow(1 + rate, paid) - 1) / rate);
+    } else {
+      balance = P - PMT * paid;
+    }
+    balance = Math.max(0, balance);
+    return { id: emi.id, name: emi.name, balance, rate, minPayment: PMT };
+  });
+
+  const snowball  = runSimulation(loans, extraPayment, "snowball");
+  const avalanche = runSimulation(loans, extraPayment, "avalanche");
+
+  const interestDiff = snowball.totalInterest - avalanche.totalInterest;
+  const monthDiff    = snowball.totalMonths   - avalanche.totalMonths;
+  const avalancheBetter = interestDiff > 100;
+
+  return (
+    <div className="glass-card rounded-2xl p-6 border border-border space-y-5">
+      <div className="flex items-center gap-2">
+        <TrendingDown className="w-5 h-5 text-violet-400" />
+        <h4 className="text-lg font-bold text-foreground m-0">Debt Payoff Strategy</h4>
+        <span className="ml-auto text-[10px] font-semibold px-2 py-0.5 rounded-full bg-violet-500/10 border border-violet-500/20 text-violet-400 uppercase tracking-wider">
+          Snowball vs Avalanche
+        </span>
+      </div>
+      <p className="text-xs text-muted-foreground -mt-2">
+        Using ₹{extraPayment.toLocaleString("en-IN")} extra/month (from slider above). Freed minimums roll forward.
+      </p>
+
+      {/* Verdict */}
+      <div className={`flex items-start gap-3 p-4 rounded-xl border ${avalancheBetter ? "border-emerald-500/30 bg-emerald-500/5" : "border-violet-500/30 bg-violet-500/5"}`}>
+        <CheckCircle2 className={`w-5 h-5 shrink-0 mt-0.5 ${avalancheBetter ? "text-emerald-400" : "text-violet-400"}`} />
+        <div>
+          {avalancheBetter ? (
+            <>
+              <p className="text-sm font-bold text-emerald-400 m-0">Avalanche saves {fmt(interestDiff)} in interest</p>
+              <p className="text-xs text-muted-foreground m-0 mt-0.5">
+                Pay highest-rate loan first. Debt-free {monthDiff > 0 ? `${monthDiff} months earlier` : "at same time"} vs snowball.
+              </p>
+            </>
+          ) : (
+            <>
+              <p className="text-sm font-bold text-violet-400 m-0">Both strategies perform similarly</p>
+              <p className="text-xs text-muted-foreground m-0 mt-0.5">
+                Interest difference is small. Snowball (smallest balance first) gives faster psychological wins.
+              </p>
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* Side-by-side comparison */}
+      <div className="grid grid-cols-2 gap-4">
+        {(["snowball", "avalanche"] as const).map(strategy => {
+          const result = strategy === "snowball" ? snowball : avalanche;
+          const isWinner = strategy === "avalanche" && avalancheBetter;
+          return (
+            <div key={strategy} className={`relative rounded-xl border p-4 space-y-3 ${isWinner ? "border-emerald-500/30 bg-emerald-500/5" : "border-border/60 bg-white/[0.02]"}`}>
+              {isWinner && (
+                <div className="absolute -top-2.5 left-1/2 -translate-x-1/2 px-2.5 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider bg-emerald-500 text-white whitespace-nowrap">
+                  Recommended
+                </div>
+              )}
+              <p className="text-xs font-bold text-foreground capitalize m-0">{strategy}</p>
+              <p className="text-[10px] text-muted-foreground m-0">
+                {strategy === "snowball" ? "Smallest balance → biggest" : "Highest rate → lowest"}
+              </p>
+              <div className="space-y-2 pt-1">
+                <div className="flex justify-between text-xs">
+                  <span className="text-muted-foreground">Debt-free in</span>
+                  <span className="font-bold text-foreground">{result.totalMonths} months</span>
+                </div>
+                <div className="flex justify-between text-xs">
+                  <span className="text-muted-foreground">Total interest</span>
+                  <span className={`font-bold ${isWinner ? "text-emerald-400" : "text-amber-400"}`}>
+                    {fmt(result.totalInterest)}
+                  </span>
+                </div>
+              </div>
+              <div className="pt-2 border-t border-border/40">
+                <p className="text-[10px] text-muted-foreground mb-1.5 font-semibold uppercase tracking-wider">Payoff order</p>
+                <div className="space-y-1">
+                  {result.payoffOrder.map((p, i) => (
+                    <div key={p.name} className="flex items-center gap-2 text-[11px]">
+                      <span className={`w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-bold shrink-0 ${isWinner ? "bg-emerald-500/20 text-emerald-400" : "bg-muted text-muted-foreground"}`}>
+                        {i + 1}
+                      </span>
+                      <span className="truncate text-foreground">{p.name}</span>
+                      <span className="ml-auto text-muted-foreground shrink-0">mo {p.month}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+};
+
 // Zod schema for EMI validation
 const emiSchema = z.object({
   name: z.string().min(1, "Loan name is required"),
@@ -1057,6 +1233,11 @@ export const EmiManager: React.FC = () => {
             })}
           </div>
         </div>
+      )}
+
+      {/* ── Snowball vs Avalanche Planner ─────────────────────────────────── */}
+      {activeEmis.length >= 2 && (
+        <SnowballAvalanchePlanner emis={activeEmis} extraPayment={extraPayment} fmt={formatIndianCurrency} />
       )}
 
       {/* Add Modal */}
