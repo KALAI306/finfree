@@ -142,13 +142,24 @@ const InvestmentForm: React.FC<InvestmentFormProps> = ({
   const [valueMode, setValueMode] = useState<"manual" | "linked">(
     investment?.tracking_mode === "linked" ? "linked" : "manual"
   );
-  const [symbol, setSymbol] = useState(investment?.symbol || "");
+  // Stock symbol (Yahoo Finance / Finnhub)
+  const [symbol, setSymbol] = useState(
+    investment?.symbol && !investment.symbol.startsWith('MF:') ? investment.symbol : ""
+  );
   // buy_price is stored in the asset's native currency (e.g. USD for US stocks)
   const [buyPriceStr, setBuyPriceStr] = useState(investment?.buy_price?.toString() || "");
   const [livePrice, setLivePrice] = useState<number | null>(null);
   const [liveCurrency, setLiveCurrency] = useState("INR");
   // Real-time FX rate: how many INR per 1 unit of liveCurrency
   const [fxRate, setFxRate] = useState(1);
+  // ── Mutual Fund (AMFI) linked state ─────────────────────────────────────
+  const [mfCode, setMfCode] = useState<string>(
+    investment?.symbol?.startsWith('MF:') ? investment.symbol.slice(3) : ''
+  );
+  const [mfNav, setMfNav] = useState<number | null>(null);
+  const [mfNavDate, setMfNavDate] = useState('');
+  // ── Gold / Silver commodity live price (INR per gram) ───────────────────
+  const [commodityPriceInr, setCommodityPriceInr] = useState<number | null>(null);
 
   const [symQuery, setSymQuery] = useState("");
   const [symResults, setSymResults] = useState<SymbolSearchResult[]>([]);
@@ -245,13 +256,90 @@ const InvestmentForm: React.FC<InvestmentFormProps> = ({
 
   const selectedType = watch("type");
 
+  // ── Per-type linked sub-modes ────────────────────────────────────────────
+  const isMFLinked        = valueMode === "linked" && selectedType === "mutual_fund";
+  const isGoldLinked      = valueMode === "linked" && selectedType === "gold";
+  const isSilverLinked    = valueMode === "linked" && selectedType === "silver";
+  const isCommodityLinked = isGoldLinked || isSilverLinked;
+  // isStockLinked = any linked type that isn't MF or commodity
+
+  // MF computed values (NAV × units)
+  const mfQty         = Number(quantityStr) || 0;
+  const mfBuyNav      = Number(buyPriceStr) || 0;
+  const mfInvested    = +(mfQty * mfBuyNav).toFixed(2);
+  const mfCurrent     = mfNav !== null ? +(mfQty * mfNav).toFixed(2) : 0;
+
+  // Commodity computed values (price/gram × grams)
+  const commQty             = Number(quantityStr) || 0;
+  const commBuyPricePerGram = Number(buyPriceStr) || 0;
+  const commInvested        = +(commQty * commBuyPricePerGram).toFixed(2);
+  const commCurrent         = commodityPriceInr !== null ? +(commQty * commodityPriceInr).toFixed(2) : 0;
+
+  // Fetch MF NAV from AMFI via worker (MF:<code>)
+  useEffect(() => {
+    if (!isMFLinked || !mfCode.trim()) { setMfNav(null); setMfNavDate(''); return; }
+    fetchQuotes([`MF:${mfCode.trim()}`])
+      .then(qs => {
+        const q = qs[0];
+        if (q && !q.error) { setMfNav(q.price); setMfNavDate(q.nav_date || ''); }
+        else { setMfNav(null); }
+      })
+      .catch(() => {});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isMFLinked, mfCode]);
+
+  // Fetch gold/silver spot price → convert to INR/gram
+  useEffect(() => {
+    if (!isCommodityLinked) { setCommodityPriceInr(null); return; }
+    const ticker = isGoldLinked ? 'GC=F' : 'SI=F';
+    fetchQuotes([ticker, 'USDINR=X'])
+      .then(qs => {
+        const priceQ = qs.find(q => q.symbol === ticker && !q.error);
+        const fxQ    = qs.find(q => q.symbol === 'USDINR=X' && !q.error);
+        if (priceQ && fxQ && fxQ.price > 0)
+          // GC=F / SI=F: USD per troy oz → INR per gram (1 troy oz = 31.1035 g)
+          setCommodityPriceInr(+(priceQ.price / 31.1035 * fxQ.price).toFixed(2));
+      })
+      .catch(() => {});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isCommodityLinked, isGoldLinked]);
+
+  // Sync MF computed values into the form
+  useEffect(() => {
+    if (!isMFLinked) return;
+    setValue("quantity", quantityStr);
+    if (mfInvested > 0) setValue("invested_amount", mfInvested);
+    if (mfCurrent > 0)  setValue("current_value", mfCurrent);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isMFLinked, quantityStr, buyPriceStr, mfNav]);
+
+  // Sync commodity computed values into the form
+  useEffect(() => {
+    if (!isCommodityLinked) return;
+    setValue("quantity", quantityStr);
+    if (commInvested > 0) setValue("invested_amount", commInvested);
+    if (commCurrent > 0)  setValue("current_value", commCurrent);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isCommodityLinked, quantityStr, buyPriceStr, commodityPriceInr]);
+
   const onFormSubmit = async (data: any) => {
     if (!user) return;
     if (valueMode === "linked") {
-      if (!symbol) { showToast("Search and select a stock/fund to link", "warning"); return; }
-      if (linkedQty <= 0) { showToast("Enter the quantity you hold", "warning"); return; }
-      if (linkedBuyNative <= 0) { showToast("Enter your average buy price", "warning"); return; }
-      if (livePrice === null) { showToast("Waiting for live price — try again in a second", "warning"); return; }
+      if (isMFLinked) {
+        if (!mfCode.trim()) { showToast("Enter the AMFI scheme code", "warning"); return; }
+        if (mfQty <= 0) { showToast("Enter the units you hold", "warning"); return; }
+        if (mfBuyNav <= 0) { showToast("Enter your average buy NAV", "warning"); return; }
+        if (mfNav === null) { showToast("Waiting for NAV — try again in a second", "warning"); return; }
+      } else if (isCommodityLinked) {
+        if (commQty <= 0) { showToast("Enter quantity in grams", "warning"); return; }
+        if (commBuyPricePerGram <= 0) { showToast("Enter your average buy price per gram", "warning"); return; }
+        if (commodityPriceInr === null) { showToast("Waiting for live price — try again in a second", "warning"); return; }
+      } else {
+        if (!symbol) { showToast("Search and select a stock/fund to link", "warning"); return; }
+        if (linkedQty <= 0) { showToast("Enter the quantity you hold", "warning"); return; }
+        if (linkedBuyNative <= 0) { showToast("Enter your average buy price", "warning"); return; }
+        if (livePrice === null) { showToast("Waiting for live price — try again in a second", "warning"); return; }
+      }
     }
     try {
       let finalType = data.type;
@@ -277,7 +365,7 @@ const InvestmentForm: React.FC<InvestmentFormProps> = ({
           type: finalType,
           quantity:
             valueMode === "linked"
-              ? linkedQty
+              ? isMFLinked ? mfQty : isCommodityLinked ? commQty : linkedQty
               : finalType === "gold" || finalType === "silver" || data.quantity
               ? data.quantity || null
               : null,
@@ -286,9 +374,16 @@ const InvestmentForm: React.FC<InvestmentFormProps> = ({
           return_percent,
           purchase_date: data.purchase_date || undefined,
           tracking_mode: valueMode,
-          symbol: valueMode === "linked" ? symbol : null,
-          // buy_price stored in native currency (USD for US stocks) so edit pre-fills correctly
-          buy_price: valueMode === "linked" ? linkedBuyNative : null,
+          symbol: valueMode === "linked"
+            ? isMFLinked ? `MF:${mfCode.trim()}`
+            : isCommodityLinked ? (finalType === "gold" ? "GC=F" : "SI=F")
+            : symbol
+            : null,
+          buy_price: valueMode === "linked"
+            ? isMFLinked ? mfBuyNav
+            : isCommodityLinked ? commBuyPricePerGram
+            : linkedBuyNative
+            : null,
         });
         savedId = investment.id;
         showToast("Investment updated successfully", "success");
@@ -299,7 +394,7 @@ const InvestmentForm: React.FC<InvestmentFormProps> = ({
           type: finalType,
           quantity:
             valueMode === "linked"
-              ? linkedQty
+              ? isMFLinked ? mfQty : isCommodityLinked ? commQty : linkedQty
               : finalType === "gold" || finalType === "silver" || data.quantity
               ? data.quantity || null
               : null,
@@ -308,8 +403,16 @@ const InvestmentForm: React.FC<InvestmentFormProps> = ({
           return_percent,
           purchase_date: data.purchase_date || undefined,
           tracking_mode: valueMode,
-          symbol: valueMode === "linked" ? symbol : null,
-          buy_price: valueMode === "linked" ? linkedBuyNative : null,
+          symbol: valueMode === "linked"
+            ? isMFLinked ? `MF:${mfCode.trim()}`
+            : isCommodityLinked ? (finalType === "gold" ? "GC=F" : "SI=F")
+            : symbol
+            : null,
+          buy_price: valueMode === "linked"
+            ? isMFLinked ? mfBuyNav
+            : isCommodityLinked ? commBuyPricePerGram
+            : linkedBuyNative
+            : null,
         });
         savedId = created.id;
         showToast("Investment logged successfully", "success");
@@ -586,13 +689,131 @@ const InvestmentForm: React.FC<InvestmentFormProps> = ({
             error={getErrorMessage(errors.current_value)}
           />
         </div>
+      ) : isMFLinked ? (
+        /* ── Mutual Fund AMFI scheme code ── */
+        <div className="space-y-4">
+          <div>
+            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider block mb-1">
+              AMFI Scheme Code
+            </label>
+            <div className="flex items-center gap-2 bg-background border border-border rounded-xl px-3.5">
+              <Radio className="w-4 h-4 text-muted-foreground shrink-0" />
+              <input
+                type="text"
+                value={mfCode}
+                onChange={(e) => setMfCode(e.target.value.replace(/\D/g, ''))}
+                placeholder="e.g. 101206"
+                className="flex-1 bg-transparent py-3 text-sm text-foreground focus:outline-none"
+              />
+              {mfCode.trim() && mfNav === null && (
+                <RefreshCw className="w-4 h-4 text-muted-foreground animate-spin shrink-0" />
+              )}
+              {mfNav !== null && (
+                <span className="text-xs font-bold text-emerald-400 shrink-0">
+                  NAV ₹{mfNav.toLocaleString("en-IN", { maximumFractionDigits: 4 })}
+                  {mfNavDate && <span className="text-muted-foreground font-normal ml-1">({mfNavDate})</span>}
+                </span>
+              )}
+            </div>
+            <p className="text-[11px] text-muted-foreground mt-1">
+              Find your scheme code at{" "}
+              <span className="text-primary font-medium">mfapi.in</span>
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <NumberInput
+              label="Units Held"
+              value={quantityStr}
+              onChange={(v) => setQuantityStr(v)}
+              decimals
+              placeholder="e.g. 245.432"
+            />
+            <NumberInput
+              label="Avg Buy NAV (₹)"
+              value={buyPriceStr}
+              onChange={setBuyPriceStr}
+              decimals
+              prefix="₹"
+              placeholder="e.g. 58.23"
+            />
+          </div>
+
+          {mfQty > 0 && mfBuyNav > 0 && (
+            <div className="grid grid-cols-2 gap-3 p-3.5 bg-muted/30 border border-border rounded-xl text-sm">
+              <div>
+                <p className="text-[10px] text-muted-foreground uppercase tracking-wider font-semibold">Invested (₹)</p>
+                <p className="font-bold text-foreground">₹{mfInvested.toLocaleString("en-IN")}</p>
+              </div>
+              <div>
+                <p className="text-[10px] text-muted-foreground uppercase tracking-wider font-semibold">Current Value (₹ live)</p>
+                <p className={`font-bold ${mfCurrent >= mfInvested ? "text-emerald-400" : "text-rose-400"}`}>
+                  {mfNav !== null ? `₹${mfCurrent.toLocaleString("en-IN")}` : "fetching…"}
+                </p>
+              </div>
+            </div>
+          )}
+        </div>
+      ) : isCommodityLinked ? (
+        /* ── Gold / Silver — price auto-fetched in ₹/gram ── */
+        <div className="space-y-4">
+          <div className="flex items-center gap-2 bg-muted/30 border border-border rounded-xl px-3.5 py-3">
+            <Radio className="w-4 h-4 text-emerald-400 shrink-0 animate-pulse" />
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-semibold text-foreground">
+                {isGoldLinked ? "MCX Gold (GC=F)" : "MCX Silver (SI=F)"} · live ₹/gram
+              </p>
+              <p className="text-[10px] text-muted-foreground">Price fetched from Yahoo Finance futures, converted to ₹/gram</p>
+            </div>
+            {commodityPriceInr !== null ? (
+              <span className="text-xs font-bold text-emerald-400 shrink-0">
+                ₹{commodityPriceInr.toLocaleString("en-IN", { maximumFractionDigits: 0 })}/g
+              </span>
+            ) : (
+              <RefreshCw className="w-4 h-4 text-muted-foreground animate-spin shrink-0" />
+            )}
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <NumberInput
+              label="Quantity (Grams)"
+              value={quantityStr}
+              onChange={(v) => setQuantityStr(v)}
+              decimals
+              placeholder="e.g. 10.5"
+            />
+            <NumberInput
+              label="Avg Buy Price (₹/gram)"
+              value={buyPriceStr}
+              onChange={setBuyPriceStr}
+              decimals
+              prefix="₹"
+              placeholder="e.g. 6800"
+            />
+          </div>
+
+          {commQty > 0 && commBuyPricePerGram > 0 && (
+            <div className="grid grid-cols-2 gap-3 p-3.5 bg-muted/30 border border-border rounded-xl text-sm">
+              <div>
+                <p className="text-[10px] text-muted-foreground uppercase tracking-wider font-semibold">Invested (₹)</p>
+                <p className="font-bold text-foreground">₹{commInvested.toLocaleString("en-IN")}</p>
+              </div>
+              <div>
+                <p className="text-[10px] text-muted-foreground uppercase tracking-wider font-semibold">Current Value (₹ live)</p>
+                <p className={`font-bold ${commCurrent >= commInvested ? "text-emerald-400" : "text-rose-400"}`}>
+                  {commodityPriceInr !== null ? `₹${commCurrent.toLocaleString("en-IN")}` : "fetching…"}
+                </p>
+              </div>
+            </div>
+          )}
+        </div>
       ) : (
-        /* Live linked — symbol picker + qty × buy price */
+        /* ── Stock / ETF — symbol search ── */
         <div className="space-y-4">
           {/* Symbol picker */}
           <div className="relative" ref={symBoxRef}>
             <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider block mb-1">
-              Linked Stock / Mutual Fund
+              Linked Stock / ETF
             </label>
             {symbol ? (
               <div className="flex items-center gap-2 bg-background border border-primary/40 rounded-xl px-3.5 py-3">
@@ -756,40 +977,46 @@ export const Investments: React.FC = () => {
   const [tooltipActive, setTooltipActive] = useState(false);
 
   // Auto-refresh linked holdings from live prices (once per page visit).
-  // Also fetches USD/INR rate for currency conversion.
+  // Handles stocks (Yahoo/Finnhub), mutual funds (MF:* → mfapi.in), and gold/silver (GC=F / SI=F).
   const liveRefreshDone = useRef(false);
   useEffect(() => {
     if (liveRefreshDone.current) return;
-    const linked = investments.filter((i) => i.tracking_mode === "linked" && i.symbol && Number(i.quantity) > 0);
-    if (linked.length === 0) return;
+    const linked = investments.filter((i) => i.tracking_mode === "linked" && Number(i.quantity) > 0);
+    // Also include gold/silver with tracking_mode=linked even without explicit symbol (use commodity symbol)
+    const commodityLinked = linked.filter((i) => (i.type === "gold" || i.type === "silver") && (!i.symbol || i.symbol === "GC=F" || i.symbol === "SI=F"));
+    const symbolLinked   = linked.filter((i) => i.symbol && i.symbol !== "GC=F" && i.symbol !== "SI=F");
+    if (symbolLinked.length === 0 && commodityLinked.length === 0) return;
     liveRefreshDone.current = true;
     (async () => {
       try {
-        // Fetch all linked quotes + USDINR for conversion in a single call
-        const symbols = [...linked.map((i) => i.symbol as string), "USDINR=X"];
-        const quotes = await fetchQuotes(symbols);
+        // Build symbol list: all symbol-linked + USDINR + commodity tickers if needed
+        const symbolSet = new Set<string>([...symbolLinked.map((i) => i.symbol as string), "USDINR=X"]);
+        if (commodityLinked.some(i => i.type === "gold"))   symbolSet.add("GC=F");
+        if (commodityLinked.some(i => i.type === "silver")) symbolSet.add("SI=F");
+        const quotes = await fetchQuotes([...symbolSet]);
 
         const usdInrQuote = quotes.find((q) => q.symbol === "USDINR=X");
-        const usdInrRate = usdInrQuote && !usdInrQuote.error ? usdInrQuote.price : 0;
+        const usdInrRate  = usdInrQuote && !usdInrQuote.error ? usdInrQuote.price : 0;
 
         const bySymbol = Object.fromEntries(
           quotes.filter((q) => !q.error && q.symbol !== "USDINR=X").map((q) => [q.symbol, q])
         );
 
         let updated = 0;
-        for (const inv of linked) {
+
+        // ── symbol-linked holdings (stocks + MF via MF:* routing) ──────────
+        for (const inv of symbolLinked) {
           const q = bySymbol[inv.symbol as string];
           if (!q) continue;
 
-          // Convert native price to INR
           let newValue: number;
-          if (q.currency === "INR") {
+          if (q.currency === "INR" || (inv.symbol as string).startsWith("MF:")) {
+            // NAV from mfapi.in is in INR; Indian stocks are INR too
             newValue = +(Number(inv.quantity) * q.price).toFixed(2);
           } else if (usdInrRate > 0) {
-            // For now handles USD; generalising: fetch {CUR}INR=X if needed
             newValue = +(Number(inv.quantity) * q.price * usdInrRate).toFixed(2);
           } else {
-            continue; // can't convert without a rate
+            continue;
           }
 
           if (Math.abs(newValue - Number(inv.current_value)) < 0.01) continue;
@@ -801,6 +1028,29 @@ export const Investments: React.FC = () => {
           });
           updated++;
         }
+
+        // ── commodity holdings (gold/silver — price in USD/troy oz, qty in grams) ──
+        if (usdInrRate > 0) {
+          for (const inv of commodityLinked) {
+            const ticker  = inv.type === "gold" ? "GC=F" : "SI=F";
+            const q       = bySymbol[ticker];
+            if (!q) continue;
+            // USD per troy oz → INR per gram (1 troy oz = 31.1035 g)
+            const pricePerGramInr = q.price / 31.1035 * usdInrRate;
+            const newValue        = +(Number(inv.quantity) * pricePerGramInr).toFixed(2);
+            if (Math.abs(newValue - Number(inv.current_value)) < 0.01) continue;
+            const invested = Number(inv.invested_amount);
+            // Also persist the commodity symbol so the LIVE badge shows
+            await updateInvestment({
+              id: inv.id,
+              current_value: newValue,
+              return_percent: invested > 0 ? +(((newValue - invested) / invested) * 100).toFixed(2) : 0,
+              symbol: ticker,
+            });
+            updated++;
+          }
+        }
+
         if (updated > 0) {
           refreshData();
           showToast(`${updated} holding${updated > 1 ? "s" : ""} updated with live prices`, "info");
@@ -1131,9 +1381,13 @@ export const Investments: React.FC = () => {
                               <RefreshCw className="w-2.5 h-2.5" /> SIP
                             </span>
                           )}
-                          {inv.tracking_mode === "linked" && inv.symbol && (
-                            <span className="inline-flex items-center gap-1 text-[10px] font-bold text-cyan-500 dark:text-cyan-400 bg-cyan-500/10 border border-cyan-500/20 px-1.5 py-0.5 rounded-md" title={`Auto-updated from live price of ${inv.symbol}`}>
-                              <Radio className="w-2.5 h-2.5" /> LIVE · {inv.symbol}
+                          {inv.tracking_mode === "linked" && (inv.symbol || inv.type === "gold" || inv.type === "silver") && (
+                            <span className="inline-flex items-center gap-1 text-[10px] font-bold text-cyan-500 dark:text-cyan-400 bg-cyan-500/10 border border-cyan-500/20 px-1.5 py-0.5 rounded-md" title={`Auto-updated from live price${inv.symbol ? ` (${inv.symbol})` : ''}`}>
+                              <Radio className="w-2.5 h-2.5" /> LIVE ·{" "}
+                              {inv.symbol?.startsWith("MF:") ? `AMFI ${inv.symbol.slice(3)}`
+                               : inv.symbol === "GC=F" || (!inv.symbol && inv.type === "gold") ? "MCX Gold"
+                               : inv.symbol === "SI=F" || (!inv.symbol && inv.type === "silver") ? "MCX Silver"
+                               : inv.symbol}
                             </span>
                           )}
                         </div>
