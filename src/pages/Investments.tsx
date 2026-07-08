@@ -140,7 +140,7 @@ const InvestmentForm: React.FC<InvestmentFormProps> = ({
 
   // ── Linked (live-tracked) mode state ────────────────────────────────────
   const [valueMode, setValueMode] = useState<"manual" | "linked">(
-    investment?.tracking_mode === "linked" ? "linked" : "manual"
+    (investment?.tracking_mode === "linked" || investment?.tracking_mode === "live") ? "linked" : "manual"
   );
   // Stock symbol (Yahoo Finance / Finnhub)
   const [symbol, setSymbol] = useState(
@@ -981,16 +981,19 @@ export const Investments: React.FC = () => {
   const liveRefreshDone = useRef(false);
   useEffect(() => {
     if (liveRefreshDone.current) return;
-    const linked = investments.filter((i) => i.tracking_mode === "linked" && Number(i.quantity) > 0);
+    const linked = investments.filter((i) => (i.tracking_mode === "linked" || i.tracking_mode === "live") && Number(i.quantity) > 0);
     // Also include gold/silver with tracking_mode=linked even without explicit symbol (use commodity symbol)
-    const commodityLinked = linked.filter((i) => (i.type === "gold" || i.type === "silver") && (!i.symbol || i.symbol === "GC=F" || i.symbol === "SI=F"));
-    const symbolLinked   = linked.filter((i) => i.symbol && i.symbol !== "GC=F" && i.symbol !== "SI=F");
+    const isCommoditySym = (s?: string | null) => !s || s === "GC=F" || s === "SI=F" || s === "GOLD_MCX" || s === "SILVER_MCX";
+    const commodityLinked = linked.filter((i) => (i.type === "gold" || i.type === "silver") && isCommoditySym(i.symbol));
+    const symbolLinked   = linked.filter((i) => i.symbol && !isCommoditySym(i.symbol));
     if (symbolLinked.length === 0 && commodityLinked.length === 0) return;
     liveRefreshDone.current = true;
     (async () => {
       try {
+        // Normalize symbol: bare AMFI codes (all digits) → MF:code for the worker routing
+        const normSym = (s: string) => /^\d+$/.test(s) ? `MF:${s}` : s;
         // Build symbol list: all symbol-linked + USDINR + commodity tickers if needed
-        const symbolSet = new Set<string>([...symbolLinked.map((i) => i.symbol as string), "USDINR=X"]);
+        const symbolSet = new Set<string>([...symbolLinked.map((i) => normSym(i.symbol as string)), "USDINR=X"]);
         if (commodityLinked.some(i => i.type === "gold"))   symbolSet.add("GC=F");
         if (commodityLinked.some(i => i.type === "silver")) symbolSet.add("SI=F");
         const quotes = await fetchQuotes([...symbolSet]);
@@ -1006,11 +1009,12 @@ export const Investments: React.FC = () => {
 
         // ── symbol-linked holdings (stocks + MF via MF:* routing) ──────────
         for (const inv of symbolLinked) {
-          const q = bySymbol[inv.symbol as string];
+          const sym = normSym(inv.symbol as string);
+          const q = bySymbol[sym];
           if (!q) continue;
 
           let newValue: number;
-          if (q.currency === "INR" || (inv.symbol as string).startsWith("MF:")) {
+          if (q.currency === "INR" || sym.startsWith("MF:")) {
             // NAV from mfapi.in is in INR; Indian stocks are INR too
             newValue = +(Number(inv.quantity) * q.price).toFixed(2);
           } else if (usdInrRate > 0) {
@@ -1021,11 +1025,14 @@ export const Investments: React.FC = () => {
 
           if (Math.abs(newValue - Number(inv.current_value)) < 0.01) continue;
           const invested = Number(inv.invested_amount);
-          await updateInvestment({
+          const patch: Record<string, unknown> = {
             id: inv.id,
             current_value: newValue,
             return_percent: invested > 0 ? +(((newValue - invested) / invested) * 100).toFixed(2) : 0,
-          });
+          };
+          if (inv.tracking_mode === "live") (patch as any).tracking_mode = "linked";
+          if (sym !== inv.symbol) (patch as any).symbol = sym;
+          await updateInvestment(patch as any);
           updated++;
         }
 
@@ -1041,12 +1048,14 @@ export const Investments: React.FC = () => {
             if (Math.abs(newValue - Number(inv.current_value)) < 0.01) continue;
             const invested = Number(inv.invested_amount);
             // Also persist the commodity symbol so the LIVE badge shows
-            await updateInvestment({
+            const cpatch: Record<string, unknown> = {
               id: inv.id,
               current_value: newValue,
               return_percent: invested > 0 ? +(((newValue - invested) / invested) * 100).toFixed(2) : 0,
               symbol: ticker,
-            });
+            };
+            if (inv.tracking_mode === "live") (cpatch as any).tracking_mode = "linked";
+            await updateInvestment(cpatch as any);
             updated++;
           }
         }
@@ -1381,12 +1390,13 @@ export const Investments: React.FC = () => {
                               <RefreshCw className="w-2.5 h-2.5" /> SIP
                             </span>
                           )}
-                          {inv.tracking_mode === "linked" && (inv.symbol || inv.type === "gold" || inv.type === "silver") && (
+                          {(inv.tracking_mode === "linked" || inv.tracking_mode === "live") && (inv.symbol || inv.type === "gold" || inv.type === "silver") && (
                             <span className="inline-flex items-center gap-1 text-[10px] font-bold text-cyan-500 dark:text-cyan-400 bg-cyan-500/10 border border-cyan-500/20 px-1.5 py-0.5 rounded-md" title={`Auto-updated from live price${inv.symbol ? ` (${inv.symbol})` : ''}`}>
                               <Radio className="w-2.5 h-2.5" /> LIVE ·{" "}
                               {inv.symbol?.startsWith("MF:") ? `AMFI ${inv.symbol.slice(3)}`
-                               : inv.symbol === "GC=F" || (!inv.symbol && inv.type === "gold") ? "MCX Gold"
-                               : inv.symbol === "SI=F" || (!inv.symbol && inv.type === "silver") ? "MCX Silver"
+                               : /^\d+$/.test(inv.symbol || '') ? `AMFI ${inv.symbol}`
+                               : inv.symbol === "GC=F" || inv.symbol === "GOLD_MCX" || (!inv.symbol && inv.type === "gold") ? "MCX Gold"
+                               : inv.symbol === "SI=F" || inv.symbol === "SILVER_MCX" || (!inv.symbol && inv.type === "silver") ? "MCX Silver"
                                : inv.symbol}
                             </span>
                           )}
