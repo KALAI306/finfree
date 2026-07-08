@@ -236,13 +236,14 @@ function parseStatementLocal(text: string, accountId: string): ParsedTx[] {
     prevBalance = balance;
     if (!(amount > 0)) continue;
 
+    const finalType: "income" | "expense" = type ?? autoCategorize(blockText).type;
     const note = cleanNote(blockText) || "Bank transaction";
     const cat = autoCategorize(note);
-    const category = type === "income"
+    const category = finalType === "income"
       ? (cat.type === "income" ? cat.category : "Other Income 🎁")
       : cat.category;
 
-    out.push({ date: b.iso, note, amount, type, category, account_id: accountId, approved: true });
+    out.push({ date: b.iso, note, amount, type: finalType, category, account_id: accountId, approved: true });
   }
 
   return out;
