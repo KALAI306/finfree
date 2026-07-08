@@ -22,6 +22,7 @@ const AISettings        = lazy(() => import("./pages/AISettings").then(m => ({ d
 const Accounts          = lazy(() => import("./pages/Accounts").then(m => ({ default: m.Accounts })));
 const AdminPanel        = lazy(() => import("./pages/AdminPanel").then(m => ({ default: m.AdminPanel })));
 const ResetPassword     = lazy(() => import("./pages/ResetPassword").then(m => ({ default: m.ResetPassword })));
+const TaxEstimator      = lazy(() => import("./pages/TaxEstimator").then(m => ({ default: m.TaxEstimator })));
 import { ToastContainer } from "./components/Toast";
 import { BiometricLock } from "./components/BiometricLock";
 import { Flame } from "lucide-react";
@@ -97,6 +98,7 @@ const AppContent: React.FC = () => {
               <Route path="/budgets" element={<Budgets />} />
               <Route path="/rules" element={<RulesDashboard />} />
               <Route path="/reports" element={<Reports />} />
+              <Route path="/tax" element={<TaxEstimator />} />
               <Route path="/settings" element={<Settings />} />
               <Route path="/ai-settings" element={isAdmin ? <AISettings /> : <Navigate to="/" replace />} />
               <Route path="/admin" element={<AdminPanel />} />

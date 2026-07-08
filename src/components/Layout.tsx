@@ -24,6 +24,7 @@ import {
   Bot,
   LineChart,
   PiggyBank,
+  Receipt,
 } from "lucide-react";
 import { FloatingAiAssistant } from "./ui/glowing-ai-chat-assistant";
 import { WelcomeTour } from "./WelcomeTour";
@@ -48,6 +49,7 @@ const navItems = [
   { path: "/budgets",    label: "Budgets",     icon: PiggyBank  },
   { path: "/rules",      label: "Rules",       icon: ShieldCheck },
   { path: "/reports",    label: "Reports",     icon: BarChart3  },
+  { path: "/tax",        label: "Tax",         icon: Receipt    },
 ];
 
 // First 4 in bottom bar, rest in drawer
