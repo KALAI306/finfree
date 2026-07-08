@@ -97,13 +97,20 @@ export async function downloadBackupJSON(backup: FinFreeBackup) {
   await saveAndShareFile(`finfree-backup-${date}.json`, json, 'application/json');
 }
 
-export async function downloadTransactionsCSV(transactions: any[]) {
+export async function downloadTransactionsCSV(
+  transactions: any[],
+  accountNames?: Record<string, string>,
+) {
   if (!transactions.length) return;
-  const headers = ['Date', 'Type', 'Category', 'Amount', 'Description', 'Account'];
+  const esc = (v: unknown) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+  const headers = ['Date', 'Type', 'Category', 'Amount', 'Note', 'Account'];
   const rows = transactions.map(t => [
-    t.date, t.type, t.category, t.amount, t.description || '', t.account_id || '',
+    t.date, t.type, t.category, t.amount,
+    t.note || t.description || '',
+    accountNames?.[t.account_id] || t.account_id || '',
   ]);
-  const csv = [headers, ...rows].map(r => r.map(v => `"${v}"`).join(',')).join('\n');
+  // BOM so Excel opens UTF-8 (₹, emoji categories) correctly
+  const csv = '﻿' + [headers, ...rows].map(r => r.map(esc).join(',')).join('\r\n');
   const date = new Date().toISOString().split('T')[0];
   await saveAndShareFile(`finfree-transactions-${date}.csv`, csv, 'text/csv');
 }

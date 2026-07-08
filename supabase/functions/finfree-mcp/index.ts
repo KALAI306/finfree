@@ -103,6 +103,23 @@ const TOOLS = [
     },
   },
   {
+    name: 'transfer_funds',
+    description: 'Move money between two of the user\'s own accounts (internal transfer). Deducts from the source account and credits the destination account, recorded as a single transfer transaction. Use this instead of add_transaction for account-to-account moves. Identify each account by id or name.',
+    inputSchema: {
+      type: 'object',
+      required: ['amount'],
+      properties: {
+        from_account_id:   { type: 'string', description: 'Source account UUID (use this OR from_account_name)' },
+        from_account_name: { type: 'string', description: 'Source account name, case-insensitive (use this OR from_account_id)' },
+        to_account_id:     { type: 'string', description: 'Destination account UUID (use this OR to_account_name)' },
+        to_account_name:   { type: 'string', description: 'Destination account name, case-insensitive (use this OR to_account_id)' },
+        amount:            { type: 'number', description: 'Positive amount to transfer' },
+        date:              { type: 'string', description: 'YYYY-MM-DD, defaults to today' },
+        note:              { type: 'string', description: 'Optional note' },
+      },
+    },
+  },
+  {
     name: 'bulk_add_transactions',
     description: 'Add multiple transactions at once. Set a top-level account_id/account_name to apply to all of them, or set it per-transaction to mix accounts. Account balances are updated for every transaction added.',
     inputSchema: {
@@ -564,6 +581,23 @@ async function handleTool(name: string, args: Record<string, unknown>, userId: s
       return { success: true, transaction: data };
     }
 
+    case 'transfer_funds': {
+      const amount = Number(args.amount);
+      if (!(amount > 0)) throw new Error('amount must be a positive number.');
+      const fromId = await resolveAccountId({ account_id: args.from_account_id, account_name: args.from_account_name }, userId, supabase);
+      const toId = await resolveAccountId({ account_id: args.to_account_id, account_name: args.to_account_name }, userId, supabase);
+      if (fromId === toId) throw new Error('Source and destination accounts must be different.');
+      const date = (args.date as string) || new Date().toISOString().slice(0, 10);
+      const { data, error } = await supabase.from('transactions').insert([{
+        user_id: userId, type: 'transfer', amount, category: 'Transfer 🔁',
+        account_id: fromId, transfer_to_account_id: toId, date, note: args.note || '', is_recurring: false,
+      }]).select().single();
+      if (error) throw error;
+      await adjustAccountBalance(fromId, -amount, supabase);
+      await adjustAccountBalance(toId, amount, supabase);
+      return { success: true, transaction: data };
+    }
+
     case 'bulk_add_transactions': {
       const hasDefault = args.account_id || args.account_name;
       const defaultAccountId = hasDefault ? await resolveAccountId(args, userId, supabase) : null;
@@ -862,7 +896,7 @@ Deno.serve(async (req: Request) => {
         serverInfo: {
           name: 'finfree',
           title: 'FinFree',
-          version: '3.2.0',
+          version: '3.3.0',
           websiteUrl: 'https://finfree-teal.vercel.app',
           icons: [{ src: 'https://finfree-teal.vercel.app/icon-512.png', mimeType: 'image/png', sizes: ['512x512'] }],
         },

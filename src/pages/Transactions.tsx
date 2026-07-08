@@ -15,12 +15,14 @@ import {
   Edit2,
   X,
   FileText,
-  RefreshCw
+  RefreshCw,
+  Download
 } from "lucide-react";
 import { Modal } from "../components/Modal";
 import { PdfParser } from "../components/PdfParser";
 import { CustomSelect, NumberInput } from "../components/CustomSelect";
 import type { Transaction } from "../lib/db";
+import { downloadTransactionsCSV } from "../lib/exportImport";
 
 // Categories definitions
 export const EXPENSE_CATEGORIES = [
@@ -838,10 +840,21 @@ export const Transactions: React.FC = () => {
           )}
         </div>
 
-        {/* Result count */}
-        <p className="text-[11px] text-muted-foreground">
-          Showing <span className="font-semibold text-foreground">{filteredTxs.length}</span> of {transactions.length} transactions
-        </p>
+        {/* Result count + export */}
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-[11px] text-muted-foreground m-0">
+            Showing <span className="font-semibold text-foreground">{filteredTxs.length}</span> of {transactions.length} transactions
+          </p>
+          {filteredTxs.length > 0 && (
+            <button
+              onClick={() => downloadTransactionsCSV(filteredTxs, Object.fromEntries(accounts.map(a => [a.id, a.name])))}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-semibold bg-muted/50 text-muted-foreground hover:text-foreground border border-border transition-colors cursor-pointer"
+              title="Export the filtered transactions as CSV"
+            >
+              <Download className="w-3 h-3" /> Export CSV
+            </button>
+          )}
+        </div>
 
         {/* Date Filters Row */}
         <div className="flex flex-col gap-3 pt-2 border-t border-border">

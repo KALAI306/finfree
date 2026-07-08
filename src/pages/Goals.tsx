@@ -708,17 +708,24 @@ export const Goals: React.FC = () => {
             const strokeDashoffset =
               circumference - (Math.min(100, progress) / 100) * circumference;
 
-            let daysToCompletionStr = "Accumulate surplus";
-            if (isCompleted) {
-              daysToCompletionStr = "Completed! 🎉";
-            } else if (goalAllocation > 0) {
-              const months = remaining / goalAllocation;
-              const days = Math.round(months * 30.4);
-              daysToCompletionStr = `~${days} days remaining (${months.toFixed(1)} months)`;
-            }
-
             const goalIcon = loadIcon(g.id);
             const sip = loadSip(g.id);
+
+            // Projection: prefer configured SIP amount, else fall back to surplus allocation
+            const monthlyRate = sip && sip.monthlyAmount > 0 ? sip.monthlyAmount : goalAllocation;
+            let daysToCompletionStr = "Accumulate surplus";
+            let etaDate: Date | null = null;
+            let onTrack: boolean | null = null;
+            if (isCompleted) {
+              daysToCompletionStr = "Completed! 🎉";
+            } else if (monthlyRate > 0) {
+              const months = remaining / monthlyRate;
+              etaDate = new Date();
+              etaDate.setDate(etaDate.getDate() + Math.round(months * 30.4));
+              const etaStr = etaDate.toLocaleDateString("en-IN", { month: "short", year: "numeric" });
+              daysToCompletionStr = `At ${formatIndianCurrency(monthlyRate, false)}/mo → ${etaStr}`;
+              if (g.deadline) onTrack = etaDate.getTime() <= new Date(g.deadline).getTime();
+            }
             const sipAccount = sip
               ? accounts.find((a) => a.id === sip.accountId)
               : null;
@@ -836,6 +843,11 @@ export const Goals: React.FC = () => {
                     <span className="text-[11px] font-medium text-gold-400 dark:text-gold-400 block truncate">
                       {daysToCompletionStr}
                     </span>
+                    {onTrack !== null && (
+                      <span className={`text-[10px] font-bold uppercase tracking-wide inline-block mt-0.5 px-1.5 py-0.5 rounded ${onTrack ? "bg-emerald-500/10 text-emerald-400" : "bg-rose-500/10 text-rose-400"}`}>
+                        {onTrack ? "On track" : "Behind deadline"}
+                      </span>
+                    )}
                   </div>
                 </div>
 

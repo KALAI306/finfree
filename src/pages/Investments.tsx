@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import { useApp, type ToastType } from "../context/AppContext";
 import { formatIndianNumberOnly } from "../lib/utils";
 import { addInvestment, deleteInvestment, updateInvestment, addTransaction } from "../lib/db";
@@ -51,6 +51,28 @@ function calcCAGR(
   if (years < 1 / 365 || invested <= 0) return { cagr: 0, years };
   const cagr = (Math.pow(currentValue / invested, 1 / years) - 1) * 100;
   return { cagr, years };
+}
+
+// ── Portfolio XIRR (Newton-Raphson over each holding's purchase cash flow) ──
+function calcPortfolioXIRR(
+  flows: { amount: number; date: Date }[], // negative = money in, positive terminal value
+): number | null {
+  if (flows.length < 2) return null;
+  const t0 = flows[0].date.getTime();
+  const yrs = flows.map(f => (f.date.getTime() - t0) / (365.25 * 24 * 3600 * 1000));
+  const npv = (r: number) => flows.reduce((s, f, i) => s + f.amount / Math.pow(1 + r, yrs[i]), 0);
+  const dnpv = (r: number) => flows.reduce((s, f, i) => s - (yrs[i] * f.amount) / Math.pow(1 + r, yrs[i] + 1), 0);
+  let rate = 0.1;
+  for (let i = 0; i < 100; i++) {
+    const v = npv(rate);
+    const d = dnpv(rate);
+    if (Math.abs(d) < 1e-10) break;
+    const next = rate - v / d;
+    if (!isFinite(next) || next <= -0.999) break;
+    if (Math.abs(next - rate) < 1e-7) return next * 100;
+    rate = next;
+  }
+  return Math.abs(npv(rate)) < 1 ? rate * 100 : null;
 }
 
 function formatAddedOn(dateStr: string): string {
@@ -796,6 +818,19 @@ export const Investments: React.FC = () => {
   const totalReturn = totalCurrentValue - totalInvested;
   const overallReturnPercent = totalInvested > 0 ? (totalReturn / totalInvested) * 100 : 0;
 
+  // Portfolio XIRR: each holding's principal on its purchase (or created) date, current value today
+  const portfolioXIRR = useMemo(() => {
+    const flows = investments
+      .filter(inv => Number(inv.invested_amount) > 0)
+      .map(inv => ({ amount: -Number(inv.invested_amount), date: new Date(inv.purchase_date || inv.created_at) }))
+      .sort((a, b) => a.date.getTime() - b.date.getTime());
+    if (!flows.length || totalCurrentValue <= 0) return null;
+    // Need at least ~a month of history for a meaningful annualized figure
+    const oldest = flows[0].date.getTime();
+    if (Date.now() - oldest < 30 * 24 * 3600 * 1000) return null;
+    return calcPortfolioXIRR([...flows, { amount: totalCurrentValue, date: new Date() }]);
+  }, [investments, totalCurrentValue]);
+
   // Pie chart data
   const colorPalette = ["#8B5CF6", "#06B6D4", "#F59E0B", "#9CA3AF", "#EC4899", "#10B981", "#3B82F6", "#EF4444"];
   const dynamicPieMap: Record<string, { name: string; value: number; color: string }> = {};
@@ -931,7 +966,11 @@ export const Investments: React.FC = () => {
               {overallReturnPercent.toFixed(2)}%
             </span>
           </div>
-          <span className="text-xs text-muted-foreground mt-2 block">Cumulative net gain/loss</span>
+          <span className="text-xs text-muted-foreground mt-2 block">
+            {portfolioXIRR !== null
+              ? <>XIRR <strong className={portfolioXIRR >= 0 ? "text-emerald-500" : "text-rose-500"}>{portfolioXIRR.toFixed(1)}% p.a.</strong> · Cumulative net gain/loss</>
+              : "Cumulative net gain/loss"}
+          </span>
         </div>
       </div>
 
