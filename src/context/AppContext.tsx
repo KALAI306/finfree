@@ -28,6 +28,7 @@ import { localDb } from "../lib/localdb";
 import { getStorageMode } from "../lib/storageMode";
 import { migrateCloudToLocal } from "../lib/migration";
 import { runSipAutoDebits } from "../lib/sip";
+import { runBudgetCheck, initNotificationStore } from "../lib/budgetNotifyHook";
 import confetti from "canvas-confetti";
 
 export type ToastType = "success" | "warning" | "error" | "info";
@@ -422,6 +423,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setGoals(goalData);
       setLastRefreshed(new Date());
       setStorageModeState(getStorageMode());
+
+      // Run budget check on data load
+      initNotificationStore(user?.id);
+      const budgetArr = Object.entries(budgetLimits).map(([category, monthly_limit]) => ({ category, monthly_limit }));
+      runBudgetCheck(budgetArr, txData, currency, user?.id);
 
       // Save monthly net worth snapshot to Dexie
       try {

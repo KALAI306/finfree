@@ -31,6 +31,8 @@ import {
 } from "lucide-react";
 import { isNativePlatform } from "../lib/smsListener";
 import { SmsHistoryImport } from "../components/SmsHistoryImport";
+import { getNotifSettings, saveNotifSettings as saveNotifSettingsFn, requestNotificationPermission, sendTestNotification } from "../lib/notifications";
+import { Bell } from "lucide-react";
 
 // Budget Limits sub-component
 const ALL_BUDGET_CATS = [
@@ -464,6 +466,15 @@ export const Settings: React.FC = () => {
   const [upiAutoReadEnabled, setUpiAutoReadEnabled] = useState(() => localStorage.getItem('finfree_upi_autoread') === '1');
   const [upiDefaultAccount, setUpiDefaultAccount] = useState(() => localStorage.getItem('finfree_upi_default_account') || '');
   const [showSmsImport, setShowSmsImport] = useState(false);
+  const [notifSettings, setNotifSettings] = useState(getNotifSettings);
+
+  const handleRequestNotifPerm = async () => {
+    await requestNotificationPermission();
+  };
+  const handleTestNotification = async () => {
+    await requestNotificationPermission();
+    await sendTestNotification();
+  };
 
   const handleUpdateProfile = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1029,6 +1040,85 @@ export const Settings: React.FC = () => {
               <Smartphone className="w-4 h-4" /> Available on Android app only
             </p>
           )}
+        </div>
+
+        {/* Notifications */}
+        <div className="glass-card rounded-2xl p-6 border border-border space-y-4">
+          <h4 className="text-base font-bold text-foreground mb-2 flex items-center gap-2">
+            <Bell className="w-5 h-5 text-gold-400" /> Notifications
+          </h4>
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-foreground">Budget Alerts</p>
+              <p className="text-xs text-muted-foreground">Get notified when spending nears limits</p>
+            </div>
+            <button
+              onClick={() => {
+                const s = { ...notifSettings, budgetAlerts: !notifSettings.budgetAlerts };
+                setNotifSettings(s);
+                saveNotifSettingsFn(s);
+                if (s.budgetAlerts) handleRequestNotifPerm();
+              }}
+              className={`w-11 h-6 rounded-full transition-colors cursor-pointer ${notifSettings.budgetAlerts ? 'bg-primary' : 'bg-muted'}`}
+            >
+              <div className={`w-5 h-5 rounded-full bg-white shadow-sm transition-transform ${notifSettings.budgetAlerts ? 'translate-x-[22px]' : 'translate-x-[2px]'}`} />
+            </button>
+          </div>
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-foreground">Daily Spend Summary</p>
+              <p className="text-xs text-muted-foreground">Evening recap of the day's spending</p>
+            </div>
+            <button
+              onClick={() => {
+                const s = { ...notifSettings, dailySummary: !notifSettings.dailySummary };
+                setNotifSettings(s);
+                saveNotifSettingsFn(s);
+              }}
+              className={`w-11 h-6 rounded-full transition-colors cursor-pointer ${notifSettings.dailySummary ? 'bg-primary' : 'bg-muted'}`}
+            >
+              <div className={`w-5 h-5 rounded-full bg-white shadow-sm transition-transform ${notifSettings.dailySummary ? 'translate-x-[22px]' : 'translate-x-[2px]'}`} />
+            </button>
+          </div>
+          {notifSettings.dailySummary && (
+            <div>
+              <label className="text-xs text-muted-foreground block mb-1">Summary Time</label>
+              <select
+                value={notifSettings.dailySummaryHour}
+                onChange={e => {
+                  const s = { ...notifSettings, dailySummaryHour: Number(e.target.value) };
+                  setNotifSettings(s);
+                  saveNotifSettingsFn(s);
+                }}
+                className="w-full bg-background border border-border rounded-xl py-2 px-3 text-foreground text-sm"
+              >
+                {Array.from({ length: 24 }, (_, i) => (
+                  <option key={i} value={i}>{i === 0 ? '12 AM' : i < 12 ? `${i} AM` : i === 12 ? '12 PM' : `${i - 12} PM`}</option>
+                ))}
+              </select>
+            </div>
+          )}
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-foreground">Notification Sound</p>
+            </div>
+            <button
+              onClick={() => {
+                const s = { ...notifSettings, sound: !notifSettings.sound };
+                setNotifSettings(s);
+                saveNotifSettingsFn(s);
+              }}
+              className={`w-11 h-6 rounded-full transition-colors cursor-pointer ${notifSettings.sound ? 'bg-primary' : 'bg-muted'}`}
+            >
+              <div className={`w-5 h-5 rounded-full bg-white shadow-sm transition-transform ${notifSettings.sound ? 'translate-x-[22px]' : 'translate-x-[2px]'}`} />
+            </button>
+          </div>
+          <button
+            onClick={handleTestNotification}
+            className="w-full py-2.5 px-4 border border-border rounded-xl text-sm font-medium hover:bg-accent transition-colors cursor-pointer"
+          >
+            Send Test Notification
+          </button>
         </div>
 
         {/* Security & Password reset */}

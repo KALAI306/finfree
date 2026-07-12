@@ -28,6 +28,7 @@ import {
 } from "lucide-react";
 import { FloatingAiAssistant } from "./ui/glowing-ai-chat-assistant";
 import { WelcomeTour } from "./WelcomeTour";
+import { NotificationCentre } from "./NotificationCentre";
 
 const THEME_COLORS = [
   { id: "gold",   label: "Gold",   cls: "theme-swatch-gold"   },
@@ -179,7 +180,8 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
             </div>
           </div>
 
-          <div className="flex gap-2">
+          <div className="flex gap-2 items-center">
+            <NotificationCentre />
             <button
               onClick={toggleTheme}
               className="flex-1 flex items-center justify-center gap-1.5 px-2 py-2 rounded-xl text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-white/[0.04] border border-border/50 transition-colors cursor-pointer"
@@ -223,6 +225,7 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
         </div>
 
         <div className="flex items-center gap-2">
+          <NotificationCentre />
           <button
             onClick={toggleTheme}
             className="w-8 h-8 flex items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-white/[0.06] transition-colors cursor-pointer"
