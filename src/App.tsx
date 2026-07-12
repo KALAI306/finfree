@@ -23,6 +23,10 @@ const Accounts          = lazy(() => import("./pages/Accounts").then(m => ({ def
 const AdminPanel        = lazy(() => import("./pages/AdminPanel").then(m => ({ default: m.AdminPanel })));
 const ResetPassword     = lazy(() => import("./pages/ResetPassword").then(m => ({ default: m.ResetPassword })));
 const TaxEstimator      = lazy(() => import("./pages/TaxEstimator").then(m => ({ default: m.TaxEstimator })));
+const ChitFunds         = lazy(() => import("./pages/ChitFunds").then(m => ({ default: m.ChitFunds })));
+const ChitFundDetail    = lazy(() => import("./pages/ChitFundDetail").then(m => ({ default: m.ChitFundDetail })));
+const LendingPage       = lazy(() => import("./pages/Lending").then(m => ({ default: m.Lending })));
+const LendingDetail     = lazy(() => import("./pages/LendingDetail").then(m => ({ default: m.LendingDetail })));
 import { ToastContainer } from "./components/Toast";
 import { BiometricLock } from "./components/BiometricLock";
 import { Flame } from "lucide-react";
@@ -99,6 +103,10 @@ const AppContent: React.FC = () => {
               <Route path="/rules" element={<RulesDashboard />} />
               <Route path="/reports" element={<Reports />} />
               <Route path="/tax" element={<TaxEstimator />} />
+              <Route path="/chits" element={<ChitFunds />} />
+              <Route path="/chits/:id" element={<ChitFundDetail />} />
+              <Route path="/lending" element={<LendingPage />} />
+              <Route path="/lending/:id" element={<LendingDetail />} />
               <Route path="/settings" element={<Settings />} />
               <Route path="/ai-settings" element={isAdmin ? <AISettings /> : <Navigate to="/" replace />} />
               <Route path="/admin" element={<AdminPanel />} />

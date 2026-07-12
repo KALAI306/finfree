@@ -111,6 +111,75 @@ export interface NetWorthSnapshot {
   recorded_at: string;
 }
 
+export interface LocalChitFund {
+  id: string;
+  user_id: string;
+  name: string;
+  total_value: number;
+  total_members: number;
+  monthly_contribution: number;
+  frequency: string;
+  frequency_days?: number;
+  start_date: string;
+  my_turn_number?: number;
+  commission_percent: number;
+  status: string;
+  notes?: string;
+  created_at: string;
+}
+
+export interface LocalChitMember {
+  id: string;
+  chit_id: string;
+  user_id: string;
+  name: string;
+  phone?: string;
+  turn_number: number;
+  collection_date?: string;
+  collected_amount?: number;
+  status: string;
+  created_at: string;
+}
+
+export interface LocalChitPayment {
+  id: string;
+  chit_id: string;
+  user_id: string;
+  round_number: number;
+  alem_date: string;
+  amount_paid: number;
+  paid_by_member_id?: string;
+  payment_status: string;
+  notes?: string;
+  created_at: string;
+}
+
+export interface LocalMoneyLending {
+  id: string;
+  user_id: string;
+  type: 'lent' | 'borrowed';
+  person_name: string;
+  person_phone?: string;
+  amount: number;
+  remaining_amount: number;
+  reason?: string;
+  lent_date: string;
+  due_date?: string;
+  status: string;
+  notes?: string;
+  created_at: string;
+}
+
+export interface LocalLendingPayment {
+  id: string;
+  lending_id: string;
+  user_id: string;
+  amount: number;
+  payment_date: string;
+  notes?: string;
+  created_at: string;
+}
+
 export class FinFreeDB extends Dexie {
   profiles!: Table<LocalProfile>;
   accounts!: Table<LocalAccount>;
@@ -121,6 +190,11 @@ export class FinFreeDB extends Dexie {
   networth_snapshots!: Table<NetWorthSnapshot>;
   preferences!: Table<LocalPreference>;
   budgets!: Table<LocalBudget>;
+  chit_funds!: Table<LocalChitFund>;
+  chit_members!: Table<LocalChitMember>;
+  chit_payments!: Table<LocalChitPayment>;
+  money_lending!: Table<LocalMoneyLending>;
+  lending_payments!: Table<LocalLendingPayment>;
 
   constructor() {
     super('FinFreeLocalDB');
@@ -161,6 +235,22 @@ export class FinFreeDB extends Dexie {
       networth_snapshots: 'id, user_id, month',
       preferences: 'id, user_id, key',
       budgets: 'id, user_id, category',
+    });
+    this.version(5).stores({
+      profiles: 'id',
+      accounts: 'id, user_id',
+      transactions: 'id, user_id, account_id, date, type, category',
+      investments: 'id, user_id',
+      emis: 'id, user_id',
+      goals: 'id, user_id',
+      networth_snapshots: 'id, user_id, month',
+      preferences: 'id, user_id, key',
+      budgets: 'id, user_id, category',
+      chit_funds: 'id, user_id, status',
+      chit_members: 'id, chit_id',
+      chit_payments: 'id, chit_id, round_number',
+      money_lending: 'id, user_id, status',
+      lending_payments: 'id, lending_id',
     });
   }
 }

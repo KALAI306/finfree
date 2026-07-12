@@ -32,6 +32,57 @@ import {
 import { Modal } from "../components/Modal";
 import { TransactionForm } from "./Transactions.tsx";
 import { localDb, type NetWorthSnapshot } from "../lib/localdb";
+import { getChitFunds, getLendings } from "../lib/dataAdapter";
+import { Handshake, ArrowLeftRight } from "lucide-react";
+
+const CommunityFinanceWidgets: React.FC<{ userId?: string; fmt: (n: number) => string }> = ({ userId, fmt }) => {
+  const [activeChits, setActiveChits] = useState<any[]>([]);
+  const [overdueLendings, setOverdueLendings] = useState<any[]>([]);
+
+  useEffect(() => {
+    if (!userId) return;
+    getChitFunds(userId).then(c => setActiveChits((c || []).filter((x: any) => x.status === 'active').slice(0, 2)));
+    getLendings(userId).then(l => {
+      const now = new Date();
+      setOverdueLendings((l || []).filter((x: any) => x.status === 'active' && x.type === 'lent' && x.due_date && new Date(x.due_date) < now).slice(0, 2));
+    });
+  }, [userId]);
+
+  if (!activeChits.length && !overdueLendings.length) return null;
+
+  return (
+    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      {activeChits.length > 0 && (
+        <Link to="/chits" className="glass-card rounded-2xl p-5 border border-border hover:border-primary/20 transition-colors cursor-pointer">
+          <div className="flex items-center gap-2 mb-3">
+            <Handshake className="w-4 h-4 text-primary" />
+            <h4 className="text-sm font-semibold">Active Chit Funds</h4>
+          </div>
+          {activeChits.map(c => (
+            <div key={c.id} className="flex items-center justify-between py-1">
+              <span className="text-xs text-muted-foreground truncate">{c.name}</span>
+              <span className="text-xs font-medium">{fmt(c.monthly_contribution)}/round</span>
+            </div>
+          ))}
+        </Link>
+      )}
+      {overdueLendings.length > 0 && (
+        <Link to="/lending" className="glass-card rounded-2xl p-5 border border-red-500/20 hover:border-red-500/40 transition-colors cursor-pointer">
+          <div className="flex items-center gap-2 mb-3">
+            <ArrowLeftRight className="w-4 h-4 text-red-500" />
+            <h4 className="text-sm font-semibold text-red-500">Overdue Payments</h4>
+          </div>
+          {overdueLendings.map(l => (
+            <div key={l.id} className="flex items-center justify-between py-1">
+              <span className="text-xs text-muted-foreground">{l.person_name}</span>
+              <span className="text-xs font-medium text-red-500">{fmt(l.remaining_amount)}</span>
+            </div>
+          ))}
+        </Link>
+      )}
+    </div>
+  );
+};
 
 // ── Net Worth History Chart ─────────────────────────────────────────────────
 
@@ -931,6 +982,9 @@ export const Dashboard: React.FC = () => {
           </div>
         );
       })()}
+
+      {/* Community Finance Widgets */}
+      <CommunityFinanceWidgets userId={user?.id} fmt={formatIndianCurrency} />
 
       {/* Add Transaction Modal */}
       <Modal isOpen={isAddTxOpen} onClose={() => setIsAddTxOpen(false)} title="New Transaction">

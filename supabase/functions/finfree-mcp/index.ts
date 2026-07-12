@@ -431,6 +431,20 @@ const TOOLS = [
       },
     },
   },
+  // Chit Fund tools
+  { name: 'list_chit_funds', description: 'List all chit funds (seettus) for the user', inputSchema: { type: 'object', properties: {} } },
+  { name: 'add_chit_fund', description: 'Create a new chit fund', inputSchema: { type: 'object', required: ['name', 'total_value', 'total_members', 'monthly_contribution', 'start_date'], properties: { name: { type: 'string' }, total_value: { type: 'number' }, total_members: { type: 'integer' }, monthly_contribution: { type: 'number' }, frequency: { type: 'string', enum: ['monthly', 'bimonthly', 'quarterly', 'custom'] }, start_date: { type: 'string' }, my_turn_number: { type: 'integer' }, commission_percent: { type: 'number' } } } },
+  { name: 'update_chit_fund', description: 'Update a chit fund', inputSchema: { type: 'object', required: ['id'], properties: { id: { type: 'string' }, name: { type: 'string' }, status: { type: 'string' }, my_turn_number: { type: 'integer' } } } },
+  { name: 'delete_chit_fund', description: 'Delete a chit fund', inputSchema: { type: 'object', required: ['id'], properties: { id: { type: 'string' } } } },
+  { name: 'list_chit_members', description: 'List members of a chit fund', inputSchema: { type: 'object', required: ['chit_id'], properties: { chit_id: { type: 'string' } } } },
+  { name: 'record_chit_payment', description: 'Record a chit fund payment/alem', inputSchema: { type: 'object', required: ['chit_id', 'round_number', 'alem_date', 'amount_paid'], properties: { chit_id: { type: 'string' }, round_number: { type: 'integer' }, alem_date: { type: 'string' }, amount_paid: { type: 'number' }, payment_status: { type: 'string' }, notes: { type: 'string' } } } },
+  { name: 'get_chit_summary', description: 'Get summary of a chit fund including net position', inputSchema: { type: 'object', required: ['chit_id'], properties: { chit_id: { type: 'string' } } } },
+  // Lending tools
+  { name: 'list_lendings', description: 'List all lending/borrowing records. Filter by type (lent/borrowed) and status', inputSchema: { type: 'object', properties: { type: { type: 'string', enum: ['lent', 'borrowed'] }, status: { type: 'string', enum: ['active', 'partially_paid', 'settled', 'written_off'] } } } },
+  { name: 'add_lending', description: 'Record money lent or borrowed', inputSchema: { type: 'object', required: ['type', 'person_name', 'amount', 'lent_date'], properties: { type: { type: 'string', enum: ['lent', 'borrowed'] }, person_name: { type: 'string' }, person_phone: { type: 'string' }, amount: { type: 'number' }, lent_date: { type: 'string' }, due_date: { type: 'string' }, reason: { type: 'string' } } } },
+  { name: 'record_lending_payment', description: 'Record a partial or full repayment', inputSchema: { type: 'object', required: ['lending_id', 'amount'], properties: { lending_id: { type: 'string' }, amount: { type: 'number' }, payment_date: { type: 'string' }, notes: { type: 'string' } } } },
+  { name: 'settle_lending', description: 'Mark a lending record as fully settled', inputSchema: { type: 'object', required: ['id'], properties: { id: { type: 'string' } } } },
+  { name: 'get_lending_summary', description: 'Get total lent, borrowed, and net position', inputSchema: { type: 'object', properties: {} } },
 ];
 
 async function getUserFromToken(token: string, supabase: ReturnType<typeof createClient>) {
@@ -865,6 +879,93 @@ async function handleTool(name: string, args: Record<string, unknown>, userId: s
         supabase.from('emis').delete().eq('user_id', userId),
       ]);
       return { success: true, message: 'All transactions, investments, goals, and EMIs deleted. Accounts, profile, and budgets kept.' };
+    }
+
+    // ── CHIT FUNDS ──────────────────────────────────────────────
+    case 'list_chit_funds': {
+      const { data } = await supabase.from('chit_funds').select('*').eq('user_id', userId).order('created_at', { ascending: false });
+      return data || [];
+    }
+    case 'add_chit_fund': {
+      const { data, error } = await supabase.from('chit_funds').insert({ ...args, user_id: userId }).select().single();
+      if (error) throw error;
+      return data;
+    }
+    case 'update_chit_fund': {
+      const { id: cid, ...rest } = args as any;
+      const { error } = await supabase.from('chit_funds').update(rest).eq('id', cid).eq('user_id', userId);
+      if (error) throw error;
+      return { success: true };
+    }
+    case 'delete_chit_fund': {
+      const { error } = await supabase.from('chit_funds').delete().eq('id', args.id).eq('user_id', userId);
+      if (error) throw error;
+      return { success: true };
+    }
+    case 'list_chit_members': {
+      const { data } = await supabase.from('chit_members').select('*').eq('chit_id', args.chit_id).order('turn_number');
+      return data || [];
+    }
+    case 'record_chit_payment': {
+      const { data, error } = await supabase.from('chit_payments').insert({ ...args, user_id: userId }).select().single();
+      if (error) throw error;
+      return data;
+    }
+    case 'get_chit_summary': {
+      const [chitRes, membersRes, paymentsRes] = await Promise.all([
+        supabase.from('chit_funds').select('*').eq('id', args.chit_id).eq('user_id', userId).single(),
+        supabase.from('chit_members').select('*').eq('chit_id', args.chit_id),
+        supabase.from('chit_payments').select('*').eq('chit_id', args.chit_id),
+      ]);
+      const chit = chitRes.data;
+      const members = membersRes.data || [];
+      const payments = paymentsRes.data || [];
+      const collected = members.filter((m: any) => m.status === 'collected').length;
+      const totalPaid = payments.filter((p: any) => p.payment_status === 'paid').reduce((s: number, p: any) => s + Number(p.amount_paid), 0);
+      return { chit, members_collected: collected, total_members: members.length, total_paid: totalPaid, rounds_remaining: (chit?.total_members || 0) - collected };
+    }
+
+    // ── LENDING ───────────────────────────────────────────────
+    case 'list_lendings': {
+      let q = supabase.from('money_lending').select('*').eq('user_id', userId);
+      if (args.type) q = q.eq('type', args.type);
+      if (args.status) q = q.eq('status', args.status);
+      const { data } = await q.order('created_at', { ascending: false });
+      return data || [];
+    }
+    case 'add_lending': {
+      const record = { ...args, user_id: userId, remaining_amount: args.remaining_amount ?? args.amount };
+      const { data, error } = await supabase.from('money_lending').insert(record).select().single();
+      if (error) throw error;
+      return data;
+    }
+    case 'record_lending_payment': {
+      const { lending_id, amount, payment_date, notes: pnotes } = args as any;
+      const { data: pay, error: pe } = await supabase.from('lending_payments').insert({ lending_id, user_id: userId, amount, payment_date: payment_date || new Date().toISOString().slice(0, 10), notes: pnotes }).select().single();
+      if (pe) throw pe;
+      const { data: lending } = await supabase.from('money_lending').select('remaining_amount').eq('id', lending_id).single();
+      const newRem = Math.max(0, Number(lending?.remaining_amount || 0) - Number(amount));
+      await supabase.from('money_lending').update({ remaining_amount: newRem, status: newRem <= 0 ? 'settled' : 'partially_paid' }).eq('id', lending_id);
+      return { payment: pay, new_remaining: newRem, settled: newRem <= 0 };
+    }
+    case 'settle_lending': {
+      const { error } = await supabase.from('money_lending').update({ remaining_amount: 0, status: 'settled' }).eq('id', args.id).eq('user_id', userId);
+      if (error) throw error;
+      return { success: true };
+    }
+    case 'get_lending_summary': {
+      const { data } = await supabase.from('money_lending').select('*').eq('user_id', userId);
+      const records = data || [];
+      const active = records.filter((r: any) => r.status === 'active' || r.status === 'partially_paid');
+      const lent = active.filter((r: any) => r.type === 'lent');
+      const borrowed = active.filter((r: any) => r.type === 'borrowed');
+      return {
+        total_lent: lent.reduce((s: number, r: any) => s + Number(r.remaining_amount), 0),
+        lent_to_people: lent.length,
+        total_borrowed: borrowed.reduce((s: number, r: any) => s + Number(r.remaining_amount), 0),
+        borrowed_from_people: borrowed.length,
+        net_position: lent.reduce((s: number, r: any) => s + Number(r.remaining_amount), 0) - borrowed.reduce((s: number, r: any) => s + Number(r.remaining_amount), 0),
+      };
     }
 
     default:
