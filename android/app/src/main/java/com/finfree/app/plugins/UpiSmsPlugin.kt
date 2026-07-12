@@ -43,7 +43,7 @@ class UpiSmsPlugin : Plugin() {
 
     @PluginMethod
     fun startListening(call: PluginCall) {
-        if (getPermissionState("sms") != "granted") {
+        if (getPermissionState("sms") != com.getcapacitor.PermissionState.GRANTED) {
             call.reject("SMS permission not granted")
             return
         }
@@ -79,7 +79,7 @@ class UpiSmsPlugin : Plugin() {
 
     @PluginMethod
     fun readSmsHistory(call: PluginCall) {
-        if (getPermissionState("sms") != "granted") {
+        if (getPermissionState("sms") != com.getcapacitor.PermissionState.GRANTED) {
             call.reject("SMS permission not granted")
             return
         }
@@ -137,15 +137,15 @@ class UpiSmsPlugin : Plugin() {
     }
 
     @PluginMethod
-    fun checkPermissions(call: PluginCall) {
+    override fun checkPermissions(call: PluginCall) {
         val state = getPermissionState("sms")
         val result = JSObject()
-        result.put("sms", state ?: "prompt")
+        result.put("sms", state?.toString()?.lowercase() ?: "prompt")
         call.resolve(result)
     }
 
     @PluginMethod
-    fun requestPermissions(call: PluginCall) {
+    override fun requestPermissions(call: PluginCall) {
         requestPermissionForAlias("sms", call, "smsPermissionCallback")
     }
 
