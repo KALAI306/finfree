@@ -62,6 +62,17 @@ export async function updateTransaction(id: string, data: any) {
   if (error) throw error;
 }
 
+export async function bulkAddTransactions(items: any[]) {
+  const records = items.map(d => ({ ...d, id: d.id || uuidv4() }));
+  if (isLocal()) {
+    await localDb.transactions.bulkPut(records);
+    return records;
+  }
+  const { data: d, error } = await supabase!.from('transactions').insert(records).select();
+  if (error) throw error;
+  return d;
+}
+
 export async function deleteTransaction(id: string) {
   if (isLocal()) {
     await localDb.transactions.delete(id);

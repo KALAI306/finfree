@@ -29,6 +29,8 @@ import {
   Link as LinkIcon,
   CheckCheck,
 } from "lucide-react";
+import { isNativePlatform } from "../lib/smsListener";
+import { SmsHistoryImport } from "../components/SmsHistoryImport";
 
 // Budget Limits sub-component
 const ALL_BUDGET_CATS = [
@@ -459,6 +461,9 @@ export const Settings: React.FC = () => {
   // Password reset state
   const [newPassword, setNewPassword] = useState("");
   const [updatingPass, setUpdatingPass] = useState(false);
+  const [upiAutoReadEnabled, setUpiAutoReadEnabled] = useState(() => localStorage.getItem('finfree_upi_autoread') === '1');
+  const [upiDefaultAccount, setUpiDefaultAccount] = useState(() => localStorage.getItem('finfree_upi_default_account') || '');
+  const [showSmsImport, setShowSmsImport] = useState(false);
 
   const handleUpdateProfile = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -977,6 +982,55 @@ export const Settings: React.FC = () => {
         {/* Connect to Claude AI */}
         {user && <ClaudeConnectCard userId={user.id} isLocal={storageMode === 'local'} />}
 
+        {/* UPI Auto-Read */}
+        <div className="glass-card rounded-2xl p-6 border border-border space-y-4">
+          <h4 className="text-base font-bold text-foreground mb-2 flex items-center gap-2">
+            <Smartphone className="w-5 h-5 text-gold-400" /> UPI Auto-Read
+          </h4>
+          {isNativePlatform() ? (
+            <>
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-foreground">Enable SMS Reading</p>
+                  <p className="text-xs text-muted-foreground">Auto-detect UPI payments from SMS</p>
+                </div>
+                <button
+                  onClick={() => {
+                    const next = !upiAutoReadEnabled;
+                    setUpiAutoReadEnabled(next);
+                    localStorage.setItem('finfree_upi_autoread', next ? '1' : '0');
+                  }}
+                  className={`w-11 h-6 rounded-full transition-colors cursor-pointer ${upiAutoReadEnabled ? 'bg-primary' : 'bg-muted'}`}
+                >
+                  <div className={`w-5 h-5 rounded-full bg-white shadow-sm transition-transform ${upiAutoReadEnabled ? 'translate-x-[22px]' : 'translate-x-[2px]'}`} />
+                </button>
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground block mb-1">Default Account</label>
+                <select
+                  value={upiDefaultAccount}
+                  onChange={e => { setUpiDefaultAccount(e.target.value); localStorage.setItem('finfree_upi_default_account', e.target.value); }}
+                  className="w-full bg-background border border-border rounded-xl py-2 px-3 text-foreground text-sm"
+                >
+                  {accounts.map(acc => (
+                    <option key={acc.id} value={acc.id}>{acc.name}</option>
+                  ))}
+                </select>
+              </div>
+              <button
+                onClick={() => setShowSmsImport(true)}
+                className="w-full py-2.5 px-4 border border-border rounded-xl text-sm font-medium hover:bg-accent transition-colors cursor-pointer"
+              >
+                Scan SMS History (last 90 days)
+              </button>
+            </>
+          ) : (
+            <p className="text-sm text-muted-foreground flex items-center gap-2">
+              <Smartphone className="w-4 h-4" /> Available on Android app only
+            </p>
+          )}
+        </div>
+
         {/* Security & Password reset */}
         <div className="glass-card rounded-2xl p-6 border border-border space-y-4">
           <h4 className="text-base font-bold text-foreground mb-2 flex items-center gap-2">
@@ -1262,6 +1316,8 @@ export const Settings: React.FC = () => {
           <EditAccountForm account={editingAccount} onClose={() => setEditingAccount(null)} />
         )}
       </Modal>
+
+      {showSmsImport && <SmsHistoryImport onClose={() => setShowSmsImport(false)} />}
     </div>
   );
 };
