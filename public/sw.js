@@ -43,3 +43,38 @@ self.addEventListener("fetch", (e) => {
   // Everything else → network-first
   e.respondWith(fetch(request).catch(() => caches.match(request)));
 });
+
+// Daily summary notification scheduling via message from main thread
+self.addEventListener("message", (e) => {
+  if (e.data && e.data.type === "SCHEDULE_SUMMARY") {
+    const { title, body, delayMs } = e.data;
+    if (delayMs > 0) {
+      setTimeout(() => {
+        self.registration.showNotification(title, {
+          body,
+          icon: "/icon-192.png",
+          badge: "/icon-192.png",
+          tag: "daily-summary",
+          data: { route: "/" },
+        });
+      }, delayMs);
+    }
+  }
+});
+
+self.addEventListener("notificationclick", (e) => {
+  e.notification.close();
+  const route = e.notification.data?.route || "/";
+  e.waitUntil(
+    self.clients.matchAll({ type: "window" }).then((clients) => {
+      for (const client of clients) {
+        if (client.url.includes(self.location.origin)) {
+          client.focus();
+          client.navigate(route);
+          return;
+        }
+      }
+      return self.clients.openWindow(route);
+    })
+  );
+});

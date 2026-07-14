@@ -34,6 +34,7 @@ import { TransactionForm } from "./Transactions.tsx";
 import { localDb, type NetWorthSnapshot } from "../lib/localdb";
 import { getChitFunds, getLendings } from "../lib/dataAdapter";
 import { Handshake, ArrowLeftRight } from "lucide-react";
+import { DailySummaryCard } from "../components/DailySummaryCard";
 
 const CommunityFinanceWidgets: React.FC<{ userId?: string; fmt: (n: number) => string }> = ({ userId, fmt }) => {
   const [activeChits, setActiveChits] = useState<any[]>([]);
@@ -982,6 +983,9 @@ export const Dashboard: React.FC = () => {
           </div>
         );
       })()}
+
+      {/* Daily Summary Card */}
+      <DailySummaryCard />
 
       {/* Community Finance Widgets */}
       <CommunityFinanceWidgets userId={user?.id} fmt={formatIndianCurrency} />

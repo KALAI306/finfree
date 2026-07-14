@@ -9,6 +9,11 @@ export interface NotifSettings {
   budgetAlerts: boolean;
   dailySummary: boolean;
   dailySummaryHour: number;
+  morningBriefing: boolean;
+  morningBriefingHour: number;
+  weeklySummary: boolean;
+  monthEndSummary: boolean;
+  noSpendCelebration: boolean;
   sound: boolean;
 }
 
@@ -17,7 +22,7 @@ export function getNotifSettings(): NotifSettings {
     const raw = localStorage.getItem(SETTINGS_KEY);
     if (raw) return JSON.parse(raw);
   } catch {}
-  return { budgetAlerts: false, dailySummary: false, dailySummaryHour: 21, sound: true };
+  return { budgetAlerts: false, dailySummary: false, dailySummaryHour: 21, morningBriefing: false, morningBriefingHour: 8, weeklySummary: true, monthEndSummary: true, noSpendCelebration: true, sound: true };
 }
 
 export function saveNotifSettings(s: NotifSettings) {
@@ -184,6 +189,43 @@ export function setNotificationStore(fn: (title: string, body: string, type: str
 
 async function storeNotification(title: string, body: string, type: string) {
   if (storeNotificationFn) await storeNotificationFn(title, body, type);
+}
+
+export async function sendSummaryNotification(title: string, body: string, type: string, route: string = '/'): Promise<void> {
+  const settings = getNotifSettings();
+  if (isQuietHours()) return;
+
+  if (Capacitor.isNativePlatform()) {
+    await LocalNotifications.schedule({
+      notifications: [{
+        title,
+        body,
+        id: Math.floor(Math.random() * 100000),
+        schedule: { at: new Date() },
+        sound: settings.sound ? undefined : '',
+        extra: { route },
+      }],
+    });
+  } else if ('Notification' in window && Notification.permission === 'granted') {
+    new Notification(title, { body, icon: '/icon-192.png' });
+  }
+
+  await storeNotification(title, body, type);
+}
+
+export async function sendTestSummary(title: string, body: string): Promise<void> {
+  if (Capacitor.isNativePlatform()) {
+    await LocalNotifications.schedule({
+      notifications: [{
+        title,
+        body,
+        id: Math.floor(Math.random() * 100000),
+        schedule: { at: new Date() },
+      }],
+    });
+  } else if ('Notification' in window && Notification.permission === 'granted') {
+    new Notification(title, { body, icon: '/icon-192.png' });
+  }
 }
 
 export async function sendTestNotification(): Promise<void> {

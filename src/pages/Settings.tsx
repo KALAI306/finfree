@@ -31,8 +31,10 @@ import {
 } from "lucide-react";
 import { isNativePlatform } from "../lib/smsListener";
 import { SmsHistoryImport } from "../components/SmsHistoryImport";
-import { getNotifSettings, saveNotifSettings as saveNotifSettingsFn, requestNotificationPermission, sendTestNotification } from "../lib/notifications";
-import { Bell } from "lucide-react";
+import { getNotifSettings, saveNotifSettings as saveNotifSettingsFn, requestNotificationPermission, sendTestNotification, sendTestSummary } from "../lib/notifications";
+import { getSummarySettings, saveSummarySettings, scheduleAllSummaryNotifications, type SummaryScheduleSettings } from "../lib/summaryScheduler";
+import { computeDailySummary, formatDailySummaryNotification } from "../lib/dailySummary";
+import { Bell, Clock } from "lucide-react";
 
 // Budget Limits sub-component
 const ALL_BUDGET_CATS = [
@@ -467,6 +469,7 @@ export const Settings: React.FC = () => {
   const [upiDefaultAccount, setUpiDefaultAccount] = useState(() => localStorage.getItem('finfree_upi_default_account') || '');
   const [showSmsImport, setShowSmsImport] = useState(false);
   const [notifSettings, setNotifSettings] = useState(getNotifSettings);
+  const [summarySettings, setSummarySettings] = useState<SummaryScheduleSettings>(getSummarySettings);
 
   const handleRequestNotifPerm = async () => {
     await requestNotificationPermission();
@@ -1064,31 +1067,45 @@ export const Settings: React.FC = () => {
               <div className={`w-5 h-5 rounded-full bg-white shadow-sm transition-transform ${notifSettings.budgetAlerts ? 'translate-x-[22px]' : 'translate-x-[2px]'}`} />
             </button>
           </div>
+
+          <div className="border-t border-border/30 pt-3">
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">Daily Summaries</p>
+          </div>
+
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm font-medium text-foreground">Daily Spend Summary</p>
-              <p className="text-xs text-muted-foreground">Evening recap of the day's spending</p>
+              <p className="text-sm font-medium text-foreground">Evening Summary</p>
+              <p className="text-xs text-muted-foreground">Daily spending recap notification</p>
             </div>
             <button
               onClick={() => {
-                const s = { ...notifSettings, dailySummary: !notifSettings.dailySummary };
-                setNotifSettings(s);
-                saveNotifSettingsFn(s);
+                const s = { ...summarySettings, dailySummary: !summarySettings.dailySummary };
+                setSummarySettings(s);
+                saveSummarySettings(s);
+                const ns = { ...notifSettings, dailySummary: s.dailySummary };
+                setNotifSettings(ns);
+                saveNotifSettingsFn(ns);
+                if (s.dailySummary) handleRequestNotifPerm();
+                scheduleAllSummaryNotifications();
               }}
-              className={`w-11 h-6 rounded-full transition-colors cursor-pointer ${notifSettings.dailySummary ? 'bg-primary' : 'bg-muted'}`}
+              className={`w-11 h-6 rounded-full transition-colors cursor-pointer ${summarySettings.dailySummary ? 'bg-primary' : 'bg-muted'}`}
             >
-              <div className={`w-5 h-5 rounded-full bg-white shadow-sm transition-transform ${notifSettings.dailySummary ? 'translate-x-[22px]' : 'translate-x-[2px]'}`} />
+              <div className={`w-5 h-5 rounded-full bg-white shadow-sm transition-transform ${summarySettings.dailySummary ? 'translate-x-[22px]' : 'translate-x-[2px]'}`} />
             </button>
           </div>
-          {notifSettings.dailySummary && (
+          {summarySettings.dailySummary && (
             <div>
-              <label className="text-xs text-muted-foreground block mb-1">Summary Time</label>
+              <label className="text-xs text-muted-foreground block mb-1">Evening Summary Time</label>
               <select
-                value={notifSettings.dailySummaryHour}
+                value={summarySettings.dailySummaryHour}
                 onChange={e => {
-                  const s = { ...notifSettings, dailySummaryHour: Number(e.target.value) };
-                  setNotifSettings(s);
-                  saveNotifSettingsFn(s);
+                  const s = { ...summarySettings, dailySummaryHour: Number(e.target.value) };
+                  setSummarySettings(s);
+                  saveSummarySettings(s);
+                  const ns = { ...notifSettings, dailySummaryHour: Number(e.target.value) };
+                  setNotifSettings(ns);
+                  saveNotifSettingsFn(ns);
+                  scheduleAllSummaryNotifications();
                 }}
                 className="w-full bg-background border border-border rounded-xl py-2 px-3 text-foreground text-sm"
               >
@@ -1098,6 +1115,117 @@ export const Settings: React.FC = () => {
               </select>
             </div>
           )}
+
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-foreground">Morning Briefing</p>
+              <p className="text-xs text-muted-foreground">Yesterday's recap at 8 AM</p>
+            </div>
+            <button
+              onClick={() => {
+                const s = { ...summarySettings, morningBriefing: !summarySettings.morningBriefing };
+                setSummarySettings(s);
+                saveSummarySettings(s);
+                const ns = { ...notifSettings, morningBriefing: s.morningBriefing };
+                setNotifSettings(ns);
+                saveNotifSettingsFn(ns);
+                if (s.morningBriefing) handleRequestNotifPerm();
+                scheduleAllSummaryNotifications();
+              }}
+              className={`w-11 h-6 rounded-full transition-colors cursor-pointer ${summarySettings.morningBriefing ? 'bg-primary' : 'bg-muted'}`}
+            >
+              <div className={`w-5 h-5 rounded-full bg-white shadow-sm transition-transform ${summarySettings.morningBriefing ? 'translate-x-[22px]' : 'translate-x-[2px]'}`} />
+            </button>
+          </div>
+          {summarySettings.morningBriefing && (
+            <div>
+              <label className="text-xs text-muted-foreground block mb-1">Morning Briefing Time</label>
+              <select
+                value={summarySettings.morningBriefingHour}
+                onChange={e => {
+                  const s = { ...summarySettings, morningBriefingHour: Number(e.target.value) };
+                  setSummarySettings(s);
+                  saveSummarySettings(s);
+                  const ns = { ...notifSettings, morningBriefingHour: Number(e.target.value) };
+                  setNotifSettings(ns);
+                  saveNotifSettingsFn(ns);
+                  scheduleAllSummaryNotifications();
+                }}
+                className="w-full bg-background border border-border rounded-xl py-2 px-3 text-foreground text-sm"
+              >
+                {Array.from({ length: 24 }, (_, i) => (
+                  <option key={i} value={i}>{i === 0 ? '12 AM' : i < 12 ? `${i} AM` : i === 12 ? '12 PM' : `${i - 12} PM`}</option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-foreground">Weekly Summary</p>
+              <p className="text-xs text-muted-foreground">Sunday evening week recap</p>
+            </div>
+            <button
+              onClick={() => {
+                const s = { ...summarySettings, weeklySummary: !summarySettings.weeklySummary };
+                setSummarySettings(s);
+                saveSummarySettings(s);
+                const ns = { ...notifSettings, weeklySummary: s.weeklySummary };
+                setNotifSettings(ns);
+                saveNotifSettingsFn(ns);
+                scheduleAllSummaryNotifications();
+              }}
+              className={`w-11 h-6 rounded-full transition-colors cursor-pointer ${summarySettings.weeklySummary ? 'bg-primary' : 'bg-muted'}`}
+            >
+              <div className={`w-5 h-5 rounded-full bg-white shadow-sm transition-transform ${summarySettings.weeklySummary ? 'translate-x-[22px]' : 'translate-x-[2px]'}`} />
+            </button>
+          </div>
+
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-foreground">Month-end Summary</p>
+              <p className="text-xs text-muted-foreground">Last day of month recap</p>
+            </div>
+            <button
+              onClick={() => {
+                const s = { ...summarySettings, monthEndSummary: !summarySettings.monthEndSummary };
+                setSummarySettings(s);
+                saveSummarySettings(s);
+                const ns = { ...notifSettings, monthEndSummary: s.monthEndSummary };
+                setNotifSettings(ns);
+                saveNotifSettingsFn(ns);
+                scheduleAllSummaryNotifications();
+              }}
+              className={`w-11 h-6 rounded-full transition-colors cursor-pointer ${summarySettings.monthEndSummary ? 'bg-primary' : 'bg-muted'}`}
+            >
+              <div className={`w-5 h-5 rounded-full bg-white shadow-sm transition-transform ${summarySettings.monthEndSummary ? 'translate-x-[22px]' : 'translate-x-[2px]'}`} />
+            </button>
+          </div>
+
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-foreground">No-Spend Day Celebration</p>
+              <p className="text-xs text-muted-foreground">Celebrate zero-expense days</p>
+            </div>
+            <button
+              onClick={() => {
+                const s = { ...summarySettings, noSpendCelebration: !summarySettings.noSpendCelebration };
+                setSummarySettings(s);
+                saveSummarySettings(s);
+                const ns = { ...notifSettings, noSpendCelebration: s.noSpendCelebration };
+                setNotifSettings(ns);
+                saveNotifSettingsFn(ns);
+              }}
+              className={`w-11 h-6 rounded-full transition-colors cursor-pointer ${summarySettings.noSpendCelebration ? 'bg-primary' : 'bg-muted'}`}
+            >
+              <div className={`w-5 h-5 rounded-full bg-white shadow-sm transition-transform ${summarySettings.noSpendCelebration ? 'translate-x-[22px]' : 'translate-x-[2px]'}`} />
+            </button>
+          </div>
+
+          <div className="border-t border-border/30 pt-3">
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">General</p>
+          </div>
+
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm font-medium text-foreground">Notification Sound</p>
@@ -1113,12 +1241,27 @@ export const Settings: React.FC = () => {
               <div className={`w-5 h-5 rounded-full bg-white shadow-sm transition-transform ${notifSettings.sound ? 'translate-x-[22px]' : 'translate-x-[2px]'}`} />
             </button>
           </div>
-          <button
-            onClick={handleTestNotification}
-            className="w-full py-2.5 px-4 border border-border rounded-xl text-sm font-medium hover:bg-accent transition-colors cursor-pointer"
-          >
-            Send Test Notification
-          </button>
+          <div className="flex gap-2">
+            <button
+              onClick={handleTestNotification}
+              className="flex-1 py-2.5 px-4 border border-border rounded-xl text-sm font-medium hover:bg-accent transition-colors cursor-pointer"
+            >
+              Test Alert
+            </button>
+            <button
+              onClick={async () => {
+                await handleRequestNotifPerm();
+                const budgets = Object.entries(budgetLimits).map(([category, monthly_limit]) => ({ category, monthly_limit }));
+                const summary = computeDailySummary(transactions, budgets);
+                const { title, body } = formatDailySummaryNotification(summary, formatIndianCurrency, Number(profileSalary) || 20000);
+                await sendTestSummary(title, body);
+                showToast('Test summary sent!', 'success');
+              }}
+              className="flex-1 py-2.5 px-4 border border-border rounded-xl text-sm font-medium hover:bg-accent transition-colors cursor-pointer"
+            >
+              Test Summary
+            </button>
+          </div>
         </div>
 
         {/* Security & Password reset */}
