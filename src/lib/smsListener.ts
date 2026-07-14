@@ -32,8 +32,11 @@ export async function requestSmsPermission(): Promise<'granted' | 'denied' | 'pr
 export async function startSmsListener(onTransaction: SmsCallback): Promise<boolean> {
   if (!isNativePlatform()) return false;
 
-  const perm = await checkSmsPermission();
-  if (perm !== 'granted') return false;
+  let perm = await checkSmsPermission();
+  if (perm !== 'granted') {
+    perm = await requestSmsPermission();
+    if (perm !== 'granted') return false;
+  }
 
   callback = onTransaction;
 
@@ -64,8 +67,11 @@ export async function stopSmsListener(): Promise<void> {
 export async function readSmsHistory(days: number = 90): Promise<UpiTransaction[]> {
   if (!isNativePlatform()) return [];
 
-  const perm = await checkSmsPermission();
-  if (perm !== 'granted') return [];
+  let perm = await checkSmsPermission();
+  if (perm !== 'granted') {
+    perm = await requestSmsPermission();
+    if (perm !== 'granted') return [];
+  }
 
   const { messages } = await UpiSms.readSmsHistory({ days });
   const transactions: UpiTransaction[] = [];

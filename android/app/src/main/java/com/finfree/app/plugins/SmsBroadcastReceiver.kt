@@ -24,14 +24,21 @@ class SmsBroadcastReceiver(
         val fullBody = messages.joinToString("") { it.displayMessageBody ?: "" }
         if (fullBody.isBlank()) return
 
-        val hasUpiContent = fullBody.contains("UPI", ignoreCase = true) ||
+        val hasTransactionContent = fullBody.contains("UPI", ignoreCase = true) ||
                 fullBody.contains("UTR", ignoreCase = true) ||
                 fullBody.contains("debited", ignoreCase = true) ||
                 fullBody.contains("credited", ignoreCase = true) ||
                 fullBody.contains("sent Rs", ignoreCase = true) ||
-                fullBody.contains("received Rs", ignoreCase = true)
+                fullBody.contains("received Rs", ignoreCase = true) ||
+                fullBody.contains("withdrawn", ignoreCase = true) ||
+                fullBody.contains("transferred", ignoreCase = true) ||
+                fullBody.contains("payment of", ignoreCase = true) ||
+                fullBody.contains("paid to", ignoreCase = true) ||
+                fullBody.contains("Txn", ignoreCase = true) ||
+                fullBody.contains("transaction", ignoreCase = true) ||
+                (fullBody.contains("Rs", ignoreCase = true) && fullBody.contains("A/c", ignoreCase = true))
 
-        if (!hasUpiContent) return
+        if (!hasTransactionContent) return
 
         onSmsReceived(sender, fullBody, System.currentTimeMillis())
     }

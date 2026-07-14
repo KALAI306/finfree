@@ -90,19 +90,29 @@ export async function sendBudgetNotification(alert: BudgetAlert, currency: strin
   incrementDailyCount();
 
   if (Capacitor.isNativePlatform()) {
+    const perm = await LocalNotifications.checkPermissions();
+    if (perm.display !== 'granted') {
+      const req = await LocalNotifications.requestPermissions();
+      if (req.display !== 'granted') return;
+    }
     await LocalNotifications.schedule({
       notifications: [{
         title,
         body,
         id: Math.floor(Math.random() * 100000),
-        schedule: { at: new Date() },
+        schedule: { at: new Date(Date.now() + 1000) },
         sound: getNotifSettings().sound ? undefined : '',
+        smallIcon: 'ic_stat_icon_config_sample',
+        iconColor: '#7c3aed',
         extra: { route: '/budgets' },
       }],
     });
   } else {
-    if ('Notification' in window && Notification.permission === 'granted') {
-      new Notification(title, { body, icon: '/icon-192.png' });
+    if ('Notification' in window) {
+      if (Notification.permission !== 'granted') await Notification.requestPermission();
+      if (Notification.permission === 'granted') {
+        new Notification(title, { body, icon: '/icon-192.png' });
+      }
     }
   }
 
@@ -121,17 +131,27 @@ export async function sendDailySummary(todaySpent: number, weekSpent: number, he
   const body = `This week ${fmt(weekSpent)}. Budget health: ${statusEmoji}`;
 
   if (Capacitor.isNativePlatform()) {
+    const perm = await LocalNotifications.checkPermissions();
+    if (perm.display !== 'granted') {
+      const req = await LocalNotifications.requestPermissions();
+      if (req.display !== 'granted') return;
+    }
     await LocalNotifications.schedule({
       notifications: [{
         title,
         body,
         id: Math.floor(Math.random() * 100000),
-        schedule: { at: new Date() },
+        schedule: { at: new Date(Date.now() + 1000) },
+        smallIcon: 'ic_stat_icon_config_sample',
+        iconColor: '#7c3aed',
         extra: { route: '/budgets' },
       }],
     });
-  } else if ('Notification' in window && Notification.permission === 'granted') {
-    new Notification(title, { body, icon: '/icon-192.png' });
+  } else if ('Notification' in window) {
+    if (Notification.permission !== 'granted') await Notification.requestPermission();
+    if (Notification.permission === 'granted') {
+      new Notification(title, { body, icon: '/icon-192.png' });
+    }
   }
 
   await storeNotification(title, body, 'daily_summary');
@@ -141,6 +161,12 @@ export async function scheduleDailySummary(): Promise<void> {
   if (!Capacitor.isNativePlatform()) return;
   const settings = getNotifSettings();
   if (!settings.dailySummary) return;
+
+  const perm = await LocalNotifications.checkPermissions();
+  if (perm.display !== 'granted') {
+    const req = await LocalNotifications.requestPermissions();
+    if (req.display !== 'granted') return;
+  }
 
   const now = new Date();
   const scheduled = new Date();
@@ -153,7 +179,9 @@ export async function scheduleDailySummary(): Promise<void> {
       body: 'Tap to see your spending today',
       id: 99999,
       schedule: { at: scheduled, every: 'day' },
-      extra: { route: '/budgets' },
+      smallIcon: 'ic_stat_icon_config_sample',
+      iconColor: '#7c3aed',
+      extra: { route: '/' },
     }],
   });
 }
@@ -196,18 +224,28 @@ export async function sendSummaryNotification(title: string, body: string, type:
   if (isQuietHours()) return;
 
   if (Capacitor.isNativePlatform()) {
+    const perm = await LocalNotifications.checkPermissions();
+    if (perm.display !== 'granted') {
+      const req = await LocalNotifications.requestPermissions();
+      if (req.display !== 'granted') return;
+    }
     await LocalNotifications.schedule({
       notifications: [{
         title,
         body,
         id: Math.floor(Math.random() * 100000),
-        schedule: { at: new Date() },
+        schedule: { at: new Date(Date.now() + 1000) },
         sound: settings.sound ? undefined : '',
+        smallIcon: 'ic_stat_icon_config_sample',
+        iconColor: '#7c3aed',
         extra: { route },
       }],
     });
-  } else if ('Notification' in window && Notification.permission === 'granted') {
-    new Notification(title, { body, icon: '/icon-192.png' });
+  } else if ('Notification' in window) {
+    if (Notification.permission !== 'granted') await Notification.requestPermission();
+    if (Notification.permission === 'granted') {
+      new Notification(title, { body, icon: '/icon-192.png' });
+    }
   }
 
   await storeNotification(title, body, type);
@@ -215,30 +253,52 @@ export async function sendSummaryNotification(title: string, body: string, type:
 
 export async function sendTestSummary(title: string, body: string): Promise<void> {
   if (Capacitor.isNativePlatform()) {
+    const perm = await LocalNotifications.checkPermissions();
+    if (perm.display !== 'granted') {
+      const req = await LocalNotifications.requestPermissions();
+      if (req.display !== 'granted') return;
+    }
     await LocalNotifications.schedule({
       notifications: [{
         title,
         body,
         id: Math.floor(Math.random() * 100000),
-        schedule: { at: new Date() },
+        schedule: { at: new Date(Date.now() + 1000) },
+        smallIcon: 'ic_stat_icon_config_sample',
+        iconColor: '#7c3aed',
       }],
     });
-  } else if ('Notification' in window && Notification.permission === 'granted') {
+  } else if ('Notification' in window) {
+    if (Notification.permission !== 'granted') {
+      const result = await Notification.requestPermission();
+      if (result !== 'granted') return;
+    }
     new Notification(title, { body, icon: '/icon-192.png' });
   }
 }
 
 export async function sendTestNotification(): Promise<void> {
   if (Capacitor.isNativePlatform()) {
+    const perm = await LocalNotifications.checkPermissions();
+    if (perm.display !== 'granted') {
+      const req = await LocalNotifications.requestPermissions();
+      if (req.display !== 'granted') return;
+    }
     await LocalNotifications.schedule({
       notifications: [{
         title: '🔔 FinFree Notifications Active',
         body: 'Budget alerts are working! You\'ll be notified when spending nears limits.',
         id: Math.floor(Math.random() * 100000),
-        schedule: { at: new Date() },
+        schedule: { at: new Date(Date.now() + 1000) },
+        smallIcon: 'ic_stat_icon_config_sample',
+        iconColor: '#7c3aed',
       }],
     });
-  } else if ('Notification' in window && Notification.permission === 'granted') {
+  } else if ('Notification' in window) {
+    if (Notification.permission !== 'granted') {
+      const result = await Notification.requestPermission();
+      if (result !== 'granted') return;
+    }
     new Notification('🔔 FinFree Notifications Active', {
       body: 'Budget alerts are working!',
       icon: '/icon-192.png',

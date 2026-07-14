@@ -30,10 +30,14 @@ class UpiSmsPlugin : Plugin() {
 
     companion object {
         val UPI_SENDERS = listOf(
-            "HDFCBK", "SBIINB", "ICICIB", "AXISBK", "IOBSMS",
-            "PAYTM", "GPAY", "PHONEPE", "AMAZONPAY", "KOTAKB",
-            "YESBNK", "INDBNK", "BOIIND", "PNBSMS", "CANBNK",
-            "UCOBNK", "IDFCFB", "FEDERAL", "AUBANK", "JUPITRMONEY"
+            "HDFCBK", "HDFCBN", "SBIINB", "SBIIN", "SBIUPI", "ICICIB", "ICICIT",
+            "AXISBK", "AXISB", "IOBSMS", "PAYTM", "PYTM", "GPAY", "PHONEPE",
+            "PHNEPE", "AMAZONPAY", "KOTAKB", "KOTAK", "YESBNK", "INDBNK",
+            "BOIIND", "PNBSMS", "CANBNK", "UCOBNK", "IDFCFB", "FEDERAL",
+            "AUBANK", "JUPITRMONEY", "BOBIBN", "UBOI", "CENTBK", "MAHABK",
+            "SYNBNK", "VIJAYA", "ANDBNK", "DENABN", "CLONUS", "TATADIG",
+            "JIOBNK", "FINOBN", "EQUITB", "RBLBNK", "DCBBNK", "KRVYBN",
+            "SLICCA", "BAJFIN", "LICHOU", "CSHFRE", "SLICECARD"
         )
     }
 
@@ -111,13 +115,20 @@ class UpiSmsPlugin : Plugin() {
                     val isUpi = UPI_SENDERS.any { sender -> upperAddr.contains(sender) }
                     if (!isUpi) continue
 
-                    val hasUpiKeyword = body.contains("UPI", ignoreCase = true) ||
+                    val hasTransactionKeyword = body.contains("UPI", ignoreCase = true) ||
                             body.contains("UTR", ignoreCase = true) ||
                             body.contains("debited", ignoreCase = true) ||
                             body.contains("credited", ignoreCase = true) ||
                             body.contains("sent Rs", ignoreCase = true) ||
-                            body.contains("received Rs", ignoreCase = true)
-                    if (!hasUpiKeyword) continue
+                            body.contains("received Rs", ignoreCase = true) ||
+                            body.contains("withdrawn", ignoreCase = true) ||
+                            body.contains("transferred", ignoreCase = true) ||
+                            body.contains("payment of", ignoreCase = true) ||
+                            body.contains("paid to", ignoreCase = true) ||
+                            body.contains("Txn", ignoreCase = true) ||
+                            body.contains("transaction", ignoreCase = true) ||
+                            (body.contains("Rs", ignoreCase = true) && body.contains("A/c", ignoreCase = true))
+                    if (!hasTransactionKeyword) continue
 
                     val msg = JSObject()
                     msg.put("sender", address)

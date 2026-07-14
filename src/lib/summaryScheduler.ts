@@ -51,6 +51,12 @@ function clampToQuietHours(hour: number): number {
 export async function scheduleAllSummaryNotifications(): Promise<void> {
   if (!Capacitor.isNativePlatform()) return;
 
+  const perm = await LocalNotifications.checkPermissions();
+  if (perm.display !== 'granted') {
+    const req = await LocalNotifications.requestPermissions();
+    if (req.display !== 'granted') return;
+  }
+
   const settings = getSummarySettings();
 
   await LocalNotifications.cancel({
