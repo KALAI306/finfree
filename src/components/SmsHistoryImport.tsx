@@ -3,7 +3,18 @@ import { useApp } from '../context/AppContext';
 import { readSmsHistory, isDuplicate, type UpiTransaction } from '../lib/smsListener';
 import { getCategoryIcon } from '../lib/smsCategories';
 import { bulkAddTransactions } from '../lib/dataAdapter';
-import { Smartphone, Check, X, Loader2 } from 'lucide-react';
+import { Smartphone, Check, X, Loader2, Calendar } from 'lucide-react';
+
+type DateRange = '7' | '30' | '90' | '180' | '365' | 'custom';
+
+const RANGE_OPTIONS: { value: DateRange; label: string }[] = [
+  { value: '7', label: 'Last 7 days' },
+  { value: '30', label: 'Last 30 days' },
+  { value: '90', label: 'Last 90 days' },
+  { value: '180', label: 'Last 6 months' },
+  { value: '365', label: 'Last 1 year' },
+  { value: 'custom', label: 'Custom range' },
+];
 
 interface SmsHistoryImportProps {
   onClose: () => void;
@@ -14,12 +25,23 @@ export const SmsHistoryImport: React.FC<SmsHistoryImportProps> = ({ onClose }) =
   const [step, setStep] = useState<'idle' | 'scanning' | 'review' | 'importing'>('idle');
   const [found, setFound] = useState<(UpiTransaction & { selected: boolean })[]>([]);
   const [progress, setProgress] = useState(0);
+  const [range, setRange] = useState<DateRange>('90');
+  const [customFrom, setCustomFrom] = useState('');
+  const [customTo, setCustomTo] = useState('');
 
   const defaultAccount = localStorage.getItem('finfree_upi_default_account') || accounts[0]?.id || '';
 
+  const getDays = (): number => {
+    if (range !== 'custom') return parseInt(range);
+    if (!customFrom) return 90;
+    const from = new Date(customFrom);
+    const to = customTo ? new Date(customTo) : new Date();
+    return Math.max(1, Math.ceil((to.getTime() - from.getTime()) / (1000 * 60 * 60 * 24)));
+  };
+
   const handleScan = async () => {
     setStep('scanning');
-    const txs = await readSmsHistory(90);
+    const txs = await readSmsHistory(getDays());
 
     const existingNotes = transactions.map((t: any) => t.note || t.description || '');
     const fresh = txs.filter(tx => !isDuplicate(tx.upiRef, existingNotes));
@@ -75,15 +97,60 @@ export const SmsHistoryImport: React.FC<SmsHistoryImportProps> = ({ onClose }) =
         </div>
 
         {step === 'idle' && (
-          <div className="text-center py-8">
+          <div className="py-4">
             <p className="text-sm text-muted-foreground mb-4">
-              Scan your SMS inbox for UPI transactions from the last 90 days.
+              Select a date range to scan your SMS inbox for UPI transactions.
               Duplicates will be automatically filtered out.
             </p>
+
+            <div className="grid grid-cols-3 gap-2 mb-4">
+              {RANGE_OPTIONS.map(opt => (
+                <button
+                  key={opt.value}
+                  onClick={() => setRange(opt.value)}
+                  className={`px-3 py-2 rounded-lg text-xs font-medium border transition-colors cursor-pointer ${
+                    range === opt.value
+                      ? 'border-primary bg-primary/10 text-primary'
+                      : 'border-border hover:border-primary/40'
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+
+            {range === 'custom' && (
+              <div className="flex items-center gap-2 mb-4">
+                <div className="flex-1">
+                  <label className="text-xs text-muted-foreground mb-1 block">From</label>
+                  <input
+                    type="date"
+                    value={customFrom}
+                    onChange={e => setCustomFrom(e.target.value)}
+                    max={customTo || new Date().toISOString().slice(0, 10)}
+                    className="w-full px-3 py-2 rounded-lg border border-border bg-background text-sm"
+                  />
+                </div>
+                <div className="flex-1">
+                  <label className="text-xs text-muted-foreground mb-1 block">To</label>
+                  <input
+                    type="date"
+                    value={customTo}
+                    onChange={e => setCustomTo(e.target.value)}
+                    min={customFrom}
+                    max={new Date().toISOString().slice(0, 10)}
+                    className="w-full px-3 py-2 rounded-lg border border-border bg-background text-sm"
+                  />
+                </div>
+              </div>
+            )}
+
             <button
               onClick={handleScan}
-              className="px-6 py-3 bg-primary text-primary-foreground rounded-xl font-medium hover:bg-primary/90 transition-colors cursor-pointer"
+              disabled={range === 'custom' && !customFrom}
+              className="w-full px-6 py-3 bg-primary text-primary-foreground rounded-xl font-medium hover:bg-primary/90 transition-colors disabled:opacity-50 cursor-pointer"
             >
+              <Calendar className="w-4 h-4 inline mr-2" />
               Start Scanning
             </button>
           </div>
